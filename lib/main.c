@@ -54,7 +54,9 @@
 // Quad Encoder
 #define L1_QUAD_ENC_OFFSET 0 // JA[0]
 #define R1_QUAD_ENC_OFFSET 1 // JA[1]
-#define DUTY_MOTION_START 0x60
+#define DUTY_MOTION_START 230
+#define DUTY_RIGHT 233
+#define DUTY_LEFT 230 
 #define QUAD_ENC_TOP 10000
 // Other
 const volatile uint32_t TCSR_OFFEST = 0;
@@ -90,69 +92,196 @@ int8_t get_xcoordinates();
 // Motor Functions
 uint32_t read_L1_quad_enc(_Bool reset);
 uint32_t read_R1_quad_enc(_Bool reset);
-void Drive_straight(uint8_t coord);
+// void drive_straight(uint8_t coord);
 void Turn_left();
 void Turn_right();
 
+void drive_straight(uint32_t distance) {
+    uint16_t pwmCnt = 0;
+    _Bool End = 0;
+    read_R1_quad_enc(1);
+    read_L1_quad_enc(1);
 
-int main (void)
-{
-    // One time initializations
-    init_program();
-    uint8_t x_coord;
-    uint8_t y_coord;
-    int reset = 0;
-    JA_DDR = 0x03;
-    JB_DDR = 0x02;
-    JC_DDR = 0x00;
 
-    while(!UpButton_pressed());
 
-    timer_2us(100000);
 
-    uint8_t signed_x_coord = get_xcoordinates();
-    uint8_t signed_y_coord = get_ycoordinates();
 
-    if(signed_x_coord & 0x80){
-        x_coord = signed_x_coord - 0x80;
-    }
-    else {
-        x_coord = signed_x_coord;
-    }
-    if(signed_y_coord & 0x80){
-        y_coord = signed_y_coord - 0x80;
-    }
-    else {
-        y_coord = signed_y_coord;
-    }
+    while (!End) {
+        // Motor drive forward
+        JC |= ((1<<LEFT2_OFFSET) | (1<<RIGHT1_OFFSET));
+        JC &= ~((1<<LEFT1_OFFSET) | (1<<RIGHT2_OFFSET));
 
-    coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
+        // if (pwmCnt <= DUTY_MOTION_START) {
+        //     JC |= (1 << L_PWM_OFFSET);
+        //     JC |= (1 << R_PWM_OFFSET);
+        // } else {
+        //     JC &= ~(1 << L_PWM_OFFSET);
+        //     JC &= ~(1 << R_PWM_OFFSET);
+        // }
 
-    while(!(reset)){
-        // First Quadrant
-        if(~(signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){
-           // test Turn_left();
+
+        if (pwmCnt <= DUTY_LEFT)
+            JC |= (1 << L_PWM_OFFSET);
+        else
+            JC &= ~(1 << L_PWM_OFFSET);
+
+        if (pwmCnt <= DUTY_RIGHT)
+            JC |= (1 << R_PWM_OFFSET);
+        else
+            JC &= ~(1 << R_PWM_OFFSET);
+        if (pwmCnt++ == PWM_TOP)
+            pwmCnt = 0;
+
+        if (read_L1_quad_enc(0) >= distance && read_R1_quad_enc(0) >= distance) {
+            End = 1;
+            JC &= ~(1 << L_PWM_OFFSET);
+            JC &= ~(1 << R_PWM_OFFSET);
         }
-        // Second Quandrant
-        else if((signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){ 
-            
-        }
-        // Third Quadrant
-        else if((signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
-            
-        }
-        // Fourth Quadrant
-        else if(~(signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
-            
-        }
-        reset = 1;
     }
-
-	while (1)
-	{
-        coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
-	}
 }
+
+int main(void)
+{
+    // One-time initializations
+    init_program();
+
+    // Set data directions
+    JA_DDR = 0x03;  // Encoder inputs
+    JB_DDR = 0x02;  // Trig pin output
+    JC_DDR = 0x00;  // Motor outputs
+
+    // Wait for the Up Button to be pressed
+    while (!UpButton_pressed());
+
+    // Drive forward a fixed distance (adjust value as needed)
+    drive_straight(1500);  // Move forward "100 units"
+
+    // Loop forever
+    while (1) {
+        // Could display coordinates or stop the motors here
+    }
+}
+
+
+// int main(void)
+// {
+//     // One time initializations
+//     init_program();
+//     uint8_t x_coord;
+//     uint8_t y_coord;
+//     int reset = 0;
+
+//     JA_DDR = 0x03;
+//     JB_DDR = 0x02;
+//     JC_DDR = 0x00;
+
+//     while (!UpButton_pressed());  // Wait for start button
+
+//     timer_2us(100000);  // Small delay
+
+//     // Get signed coordinates from switches
+//     int8_t signed_x_coord = get_xcoordinates();
+//     int8_t signed_y_coord = get_ycoordinates();
+
+//     // Absolute values for display/motion planning
+//     if (signed_x_coord & 0x80)
+//         x_coord = signed_x_coord - 0x80;
+//     else
+//         x_coord = signed_x_coord;
+
+//     if (signed_y_coord & 0x80)
+//         y_coord = signed_y_coord - 0x80;
+//     else
+//         y_coord = signed_y_coord;
+
+//     coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
+
+//     // --- Movement Phase ---
+    
+//     // X-Axis Movement
+//     if (signed_x_coord != 0) {
+//         if (!(signed_x_coord & 0x80)) {
+//             // Positive X — Turn right, drive forward, turn left to reorient
+//             Turn_right();
+//             drive_straight(x_coord);
+//             Turn_left();
+//         } else {
+//             // Negative X — Turn left, drive forward, turn right to reorient
+//             Turn_left();
+//             drive_straight(x_coord);
+//             Turn_right();
+//         }
+//     }
+
+//     // Y-Axis Movement (robot is now reoriented to original direction)
+//     if (signed_y_coord != 0) {
+//         drive_straight(y_coord);
+//     }
+
+//     while (1) {
+//         coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
+//     }
+// }
+
+
+// int main (void)
+// {
+//     // One time initializations
+//     init_program();
+//     uint8_t x_coord;
+//     uint8_t y_coord;
+//     int reset = 0;
+//     JA_DDR = 0x03;
+//     JB_DDR = 0x02;
+//     JC_DDR = 0x00;
+
+//     while(!UpButton_pressed());
+
+//     timer_2us(100000);
+
+//     uint8_t signed_x_coord = get_xcoordinates();
+//     uint8_t signed_y_coord = get_ycoordinates();
+
+//     if(signed_x_coord & 0x80){
+//         x_coord = signed_x_coord - 0x80;
+//     }
+//     else {
+//         x_coord = signed_x_coord;
+//     }
+//     if(signed_y_coord & 0x80){
+//         y_coord = signed_y_coord - 0x80;
+//     }
+//     else {
+//         y_coord = signed_y_coord;
+//     }
+
+//     coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
+
+//     while(!(reset)){
+//         // First Quadrant
+//         if(~(signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){
+//            // test Turn_left();
+//         }
+//         // Second Quandrant
+//         else if((signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){ 
+            
+//         }
+//         // Third Quadrant
+//         else if((signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
+            
+//         }
+//         // Fourth Quadrant
+//         else if(~(signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
+            
+//         }
+//         reset = 1;
+//     }
+
+// 	while (1)
+// 	{
+//         coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
+// 	}
+// }
 
 // Function Implementation - Initialization
 void init_program(){
@@ -386,29 +515,7 @@ void Turn_right(){
     }
 }
 
-void Drive_straight(uint8_t coord){
-    //uint16_t pwmCnt = 0;
-    uint8_t timer = 0;
 
-        while(coord > timer){
-            JC |= ((1<<LEFT2_OFFSET) | (1<<RIGHT1_OFFSET));
-            JC &= ~((1<<LEFT1_OFFSET) | (1<<RIGHT2_OFFSET));
-
-           // if (pwmCnt <= )
-             //   JC |= (1 << L_PWM_OFFSET);
-//            else
-  //              JC &= ~(1 << L_PWM_OFFSET);
-    //        if (pwmCnt <= )
-      //          JC |= (1 << R_PWM_OFFSET);
-        //    else 
-          //      JC &= ~(1 << R_PWM_OFFSET);
-            //if (pwmCnt++ == PWM_TOP){
-              //  pwmCnt = 0;
-                //timer++;
-           // }
-        }
-
-}
 
 void coord_display(uint8_t x_coord, uint8_t y_coord, uint8_t signed_x_coord, uint8_t signed_y_coord){
     uint8_t sevenSegValue[4] = {0};
