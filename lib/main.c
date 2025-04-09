@@ -53,8 +53,8 @@
 #define RIGHT2_OFFSET 4 // JC[4]
 #define RIGHT1_OFFSET 5 // JC[5]
 #define DUTY_MOTION_START 230
-#define DUTY_LEFT_STRAIGHT 160
-#define DUTY_RIGHT_STRAIGHT 180
+#define DUTY_LEFT_STRAIGHT 220
+#define DUTY_RIGHT_STRAIGHT 240
 #define PWM_TOP 255
 // Quad Encoder
 #define L1_QUAD_ENC_OFFSET 0 // JA[0]
@@ -111,9 +111,12 @@ int main (void){
     JB_DDR = 0x02;
     JC_DDR = 0x00;
     
-    coord_display(0, 0, 0, 0);
+    // coord_display(0, 0, 0, 0);
 
-    while(!UpButton_pressed());
+    while(!UpButton_pressed()){
+            coord_display(0, 0, 0, 0);
+
+    }
 
     timer_2us(100000);
 
@@ -139,7 +142,8 @@ int main (void){
          // First Quadrant
         if(~(signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){
             // test
-            drive_straight(170);
+            drive_straight(250);
+            timer_2us(50000);
             Turn_left();
         }
          // Second Quandrant
@@ -342,6 +346,10 @@ int8_t get_ycoordinates(){
 }
 
 void Turn_left(){
+    // Reset motor direction and PWM pins
+JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
+
+  
     _Bool EndR = 0;
     _Bool EndL = 0;    
     uint16_t pwmCnt = 0;
@@ -374,6 +382,8 @@ void Turn_left(){
 }
 
 void Turn_right(){
+    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
+
     _Bool EndL = 0;
     _Bool EndR = 0;
     uint16_t pwmCnt = 0;
@@ -412,17 +422,25 @@ void Turn_180(){
 }
 
 void drive_straight(uint8_t distance) {
+    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
+            (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
+            (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
+
     uint16_t pwmCnt = 0;
-    uint8_t duty_right = DUTY_RIGHT_STRAIGHT;
-    uint8_t duty_left = DUTY_LEFT_STRAIGHT;
+
+    // Initial calibrated offset — favoring slightly slower right motor
+    int16_t duty_left = 170;
+    int16_t duty_right = 160;
+
     read_R1_quad_enc(1);
     read_L1_quad_enc(1);
-    
-    // Motor drive forward
-    JC |= ((1<<LEFT1_OFFSET) | (1<<RIGHT2_OFFSET));
-    JC &= ~((1<<LEFT2_OFFSET) | (1<<RIGHT1_OFFSET));
 
-    while(!((read_L1_quad_enc(0) / 5) >= distance && (read_R1_quad_enc(0) / 5) >= distance)){
+    JC |= (1 << LEFT1_OFFSET) | (1 << RIGHT2_OFFSET);
+    JC &= ~((1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET));
+
+    while (!((read_L1_quad_enc(0) / 5) >= distance && 
+             (read_R1_quad_enc(0) / 5) >= distance)) {
+
         if (pwmCnt <= duty_left)
             JC |= (1 << L_PWM_OFFSET);
         else
@@ -432,27 +450,38 @@ void drive_straight(uint8_t distance) {
             JC |= (1 << R_PWM_OFFSET);
         else
             JC &= ~(1 << R_PWM_OFFSET);
-        if (++pwmCnt == PWM_TOP){
+
+        if (++pwmCnt >= PWM_TOP) {
             pwmCnt = 0;
-        if(read_L1_quad_enc(0) > read_R1_quad_enc(0))
-        {
-            duty_right = DUTY_RIGHT_STRAIGHT;
-            duty_left = 0;
-        }
-        else if(read_R1_quad_enc(0) > read_L1_quad_enc(0))
-        {
-            duty_left = DUTY_LEFT_STRAIGHT;
-            duty_right = 0;
-        }
-        else if(read_L1_quad_enc(0) == read_R1_quad_enc(0)){
-            duty_left = DUTY_LEFT_STRAIGHT;
-            duty_right = DUTY_RIGHT_STRAIGHT;
-        }
+
+            int32_t left_count = read_L1_quad_enc(0);
+            int32_t right_count = read_R1_quad_enc(0);
+            int32_t diff = left_count - right_count;
+
+            // Only correct if really off — and do it gently
+            if (diff > 3) {
+                duty_left -= 1;
+                duty_right += 1;
+            } else if (diff < -3) {
+                duty_right -= 1;
+                duty_left += 1;
+            }
+
+            // Clamp
+            if (duty_left > PWM_TOP) duty_left = PWM_TOP;
+            if (duty_right > PWM_TOP) duty_right = PWM_TOP;
+            if (duty_left < 200) duty_left = 200;
+            if (duty_right < 200) duty_right = 200;
         }
     }
-    JC &= ~(1 << L_PWM_OFFSET);
-    JC &= ~(1 << R_PWM_OFFSET);
+
+    // Stop motors and directions
+    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
+            (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
+            (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
 }
+
+
 
 void coord_display(uint8_t x_coord, uint8_t y_coord, uint8_t signed_x_coord, uint8_t signed_y_coord){
     uint8_t sevenSegValue[4] = {0};
