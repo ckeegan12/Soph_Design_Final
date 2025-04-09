@@ -114,27 +114,29 @@ int main (void){
     // coord_display(0, 0, 0, 0);
 
     while(!UpButton_pressed()){
-            coord_display(0, 0, 0, 0);
+        uint8_t signed_x_coord = get_xcoordinates();
+        uint8_t signed_y_coord = get_ycoordinates();
+
+        if(signed_x_coord & 0x80){
+            x_coord = signed_x_coord - 0x80;
+        }
+        else {
+        x_coord = signed_x_coord;
+        }
+        if(signed_y_coord & 0x80){
+        y_coord = signed_y_coord - 0x80;
+        }
+        else {
+        y_coord = signed_y_coord;
+        }
+        coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
 
     }
 
     timer_2us(100000);
-
+    
     uint8_t signed_x_coord = get_xcoordinates();
     uint8_t signed_y_coord = get_ycoordinates();
-
-    if(signed_x_coord & 0x80){
-        x_coord = signed_x_coord - 0x80;
-    }
-    else {
-       x_coord = signed_x_coord;
-    }
-    if(signed_y_coord & 0x80){
-       y_coord = signed_y_coord - 0x80;
-    }
-    else {
-       y_coord = signed_y_coord;
-    }
 
     
 
