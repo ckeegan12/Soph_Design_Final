@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <strings.h>
 #include <sys/_intsup.h>
 #include <xil_printf.h>
 
@@ -41,7 +42,7 @@
 #define R1_QUAD_ENC_OFFSET 1 // JA[1]
 
 // Constants
-#define INCREMENT 8
+#define INCREMENT 5
 #define TIMEOUT = 10000000 // How long to wait until assuming trig was lost
 #define ITP (uint32_t *)
 // Motor
@@ -51,11 +52,14 @@
 #define R_PWM_OFFSET 3 // JC[3]
 #define RIGHT2_OFFSET 4 // JC[4]
 #define RIGHT1_OFFSET 5 // JC[5]
+#define DUTY_MOTION_START 230
+#define DUTY_LEFT_STRAIGHT 160
+#define DUTY_RIGHT_STRAIGHT 180
 #define PWM_TOP 255
 // Quad Encoder
 #define L1_QUAD_ENC_OFFSET 0 // JA[0]
 #define R1_QUAD_ENC_OFFSET 1 // JA[1]
-#define DUTY_MOTION_START 200
+
 #define QUAD_ENC_TOP 10000
 // Other
 const volatile uint32_t TCSR_OFFEST = 0;
@@ -91,93 +95,73 @@ int8_t get_xcoordinates();
 // Motor Functions
 uint32_t read_L1_quad_enc(_Bool reset);
 uint32_t read_R1_quad_enc(_Bool reset);
-uint8_t Update_Left_Duty_Cyle(uint8_t duty_right, uint8_t duty_left);
-uint8_t Update_Right_Duty_Cyle(uint8_t duty_right, uint8_t duty_left);
 // Drive Direction
 void drive_straight(uint8_t coord);
 void Turn_left();
 void Turn_right();
 void Turn_180();
 
-int main(void)
-{
-    // One-time initializations
+int main (void){
+    // One time initializations
     init_program();
+    uint8_t x_coord;
+    uint8_t y_coord;
+    int reset = 0;
+    JA_DDR = 0x03;
+    JB_DDR = 0x02;
+    JC_DDR = 0x00;
+    
+    coord_display(0, 0, 0, 0);
 
-    // Set data directions
-    JA_DDR = 0x03;  // Encoder inputs
-    JB_DDR = 0x02;  // Trig pin output
-    JC_DDR = 0x00;  // Motor outputs
+    while(!UpButton_pressed());
 
-    while (!UpButton_pressed());
     timer_2us(100000);
 
-    // Test Code
-    drive_straight(240);
+    uint8_t signed_x_coord = get_xcoordinates();
+    uint8_t signed_y_coord = get_ycoordinates();
 
-    while (1) {
-        // Could display coordinates or stop the motors here
+    if(signed_x_coord & 0x80){
+        x_coord = signed_x_coord - 0x80;
     }
+    else {
+       x_coord = signed_x_coord;
+    }
+    if(signed_y_coord & 0x80){
+       y_coord = signed_y_coord - 0x80;
+    }
+    else {
+       y_coord = signed_y_coord;
+    }
+
+    
+
+    while(!(reset)){
+         // First Quadrant
+        if(~(signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){
+            // test
+            drive_straight(170);
+            Turn_left();
+        }
+         // Second Quandrant
+        else if((signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){ 
+            
+        }
+         // Third Quadrant
+        else if((signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
+            
+        }
+         // Fourth Quadrant
+        else if(~(signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
+            
+        }
+        reset = 1;
+    }
+
+ 	while (1)
+ 	{
+        coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
+ 	}
 }
-
-// int main (void)
-// {
-//     // One time initializations
-//     init_program();
-//     uint8_t x_coord;
-//     uint8_t y_coord;
-//     int reset = 0;
-//     JA_DDR = 0x03;
-//     JB_DDR = 0x02;
-//     JC_DDR = 0x00;
-
-//     while(!UpButton_pressed());
-
-//     timer_2us(100000);
-
-//     uint8_t signed_x_coord = get_xcoordinates();
-//     uint8_t signed_y_coord = get_ycoordinates();
-
-//     if(signed_x_coord & 0x80){
-//         x_coord = signed_x_coord - 0x80;
-//     }
-//     else {
-//         x_coord = signed_x_coord;
-//     }
-//     if(signed_y_coord & 0x80){
-//         y_coord = signed_y_coord - 0x80;
-//     }
-//     else {
-//         y_coord = signed_y_coord;
-//     }
-
-//     coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
-
-//     while(!(reset)){
-//         // First Quadrant
-//         if(~(signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){
-//            // test Turn_left();
-//         }
-//         // Second Quandrant
-//         else if((signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){ 
-            
-//         }
-//         // Third Quadrant
-//         else if((signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
-            
-//         }
-//         // Fourth Quadrant
-//         else if(~(signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
-            
-//         }
-//         reset = 1;
-//     }
-
-// 	while (1)
-// 	{
-//         coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
-// 	}
-// }
 
 // Function Implementation - Initialization
 void init_program(){
@@ -429,59 +413,45 @@ void Turn_180(){
 
 void drive_straight(uint8_t distance) {
     uint16_t pwmCnt = 0;
-    uint8_t duty_right = DUTY_MOTION_START;
-    uint8_t duty_left = DUTY_MOTION_START;
-    _Bool End = 0;
+    uint8_t duty_right = DUTY_RIGHT_STRAIGHT;
+    uint8_t duty_left = DUTY_LEFT_STRAIGHT;
     read_R1_quad_enc(1);
     read_L1_quad_enc(1);
+    
+    // Motor drive forward
+    JC |= ((1<<LEFT1_OFFSET) | (1<<RIGHT2_OFFSET));
+    JC &= ~((1<<LEFT2_OFFSET) | (1<<RIGHT1_OFFSET));
 
-    while (!End) {
-        // Motor drive forward
-        JC |= ((1<<LEFT2_OFFSET) | (1<<RIGHT1_OFFSET));
-        JC &= ~((1<<LEFT1_OFFSET) | (1<<RIGHT2_OFFSET));
-
-        if (pwmCnt <= duty_right)
+    while(!((read_L1_quad_enc(0) / 5) >= distance && (read_R1_quad_enc(0) / 5) >= distance)){
+        if (pwmCnt <= duty_left)
             JC |= (1 << L_PWM_OFFSET);
         else
             JC &= ~(1 << L_PWM_OFFSET);
 
-        if (pwmCnt <= duty_left)
+        if (pwmCnt <= duty_right)
             JC |= (1 << R_PWM_OFFSET);
         else
             JC &= ~(1 << R_PWM_OFFSET);
-        if (pwmCnt++ == PWM_TOP){
+        if (++pwmCnt == PWM_TOP){
             pwmCnt = 0;
-            duty_left = Update_Left_Duty_Cyle(duty_right, duty_left);
-            duty_right = Update_Right_Duty_Cyle(duty_right, duty_left);
+        if(read_L1_quad_enc(0) > read_R1_quad_enc(0))
+        {
+            duty_right = DUTY_RIGHT_STRAIGHT;
+            duty_left = 0;
         }
-        if (read_L1_quad_enc(0) >= distance && read_R1_quad_enc(0) >= distance) {
-            End = 1;
-            JC &= ~(1 << L_PWM_OFFSET);
-            JC &= ~(1 << R_PWM_OFFSET);
+        else if(read_R1_quad_enc(0) > read_L1_quad_enc(0))
+        {
+            duty_left = DUTY_LEFT_STRAIGHT;
+            duty_right = 0;
+        }
+        else if(read_L1_quad_enc(0) == read_R1_quad_enc(0)){
+            duty_left = DUTY_LEFT_STRAIGHT;
+            duty_right = DUTY_RIGHT_STRAIGHT;
+        }
         }
     }
-}
-
-uint8_t Update_Left_Duty_Cyle(uint8_t duty_right, uint8_t duty_left){
-    
-    if(!(read_L1_quad_enc(0) == read_R1_quad_enc(0)) && !(duty_right >= 0xF7 | duty_left >= 0xF7)){
-        duty_left = duty_left + INCREMENT * (int)(read_R1_quad_enc(0) / read_L1_quad_enc(0));
-    }
-    if(!(read_L1_quad_enc(0) == read_R1_quad_enc(0)) && (duty_right >= 0xF7 | duty_left >= 0xF7)){
-        duty_left = duty_left - INCREMENT * (int)(read_L1_quad_enc(0) / read_R1_quad_enc(0));
-    }
-    return duty_left;
-}
-
-uint8_t Update_Right_Duty_Cyle(uint8_t duty_right, uint8_t duty_left){
-    
-    if(!(read_L1_quad_enc(0) == read_R1_quad_enc(0)) && !(duty_right >= 0xF7 | duty_left >= 0xF7)){
-        duty_right = duty_right + INCREMENT * (int)(read_L1_quad_enc(0) / read_R1_quad_enc(0));
-    }
-    if(!(read_L1_quad_enc(0) == read_R1_quad_enc(0)) && (duty_right >= 0xF7 | duty_left >= 0xF7)){
-        duty_right = duty_right - INCREMENT * (int)(read_R1_quad_enc(0) / read_L1_quad_enc(0));
-    }
-    return duty_right;
+    JC &= ~(1 << L_PWM_OFFSET);
+    JC &= ~(1 << R_PWM_OFFSET);
 }
 
 void coord_display(uint8_t x_coord, uint8_t y_coord, uint8_t signed_x_coord, uint8_t signed_y_coord){
