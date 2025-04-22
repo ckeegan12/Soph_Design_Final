@@ -3,6 +3,7 @@
 #include <strings.h>
 #include <sys/_intsup.h>
 #include <xil_printf.h>
+#include <xil_types.h>
 
 #define BUTTONS 	(* (unsigned volatile *) 0x40000000) // 4  pin In		btnU, btnL, btnR, btnD
 #define JA 			(* (unsigned volatile *) 0x40001000) // 8  pin In/Out	JA[7:0]
@@ -52,9 +53,7 @@
 #define R_PWM_OFFSET 3 // JC[3]
 #define RIGHT2_OFFSET 4 // JC[4]
 #define RIGHT1_OFFSET 5 // JC[5]
-#define DUTY_MOTION_START 230
-#define DUTY_LEFT_STRAIGHT 220
-#define DUTY_RIGHT_STRAIGHT 240
+#define DUTY_MOTION_START 150
 #define PWM_TOP 255
 // Quad Encoder
 #define L1_QUAD_ENC_OFFSET 0 // JA[0]
@@ -90,12 +89,13 @@ uint32_t * convert_timer_to_hex_address (uint8_t timer_number);
 void configure_timers();
 void start_stopwatch(uint8_t timer_number);
 uint32_t read_stopwatch(uint8_t timer_number);
-int8_t get_ycoordinates();
-int8_t get_xcoordinates();
+uint8_t get_ycoordinates();
+uint8_t get_xcoordinates();
 // Motor Functions
 uint32_t read_L1_quad_enc(_Bool reset);
 uint32_t read_R1_quad_enc(_Bool reset);
 // Drive Direction
+_Bool Distance_Stop(uint8_t coord);
 void drive_straight(uint8_t coord);
 void Turn_left();
 void Turn_right();
@@ -142,23 +142,40 @@ int main (void){
 
     while(!(reset)){
          // First Quadrant
-        if(~(signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){
-            // test
-            drive_straight(250);
+        if(!(signed_x_coord & (0x80)) && !((signed_y_coord & (0x80)))){
+            drive_straight(y_coord);
             timer_2us(50000);
-            Turn_left();
+            //Turn_right();
+            timer_2us(50000);
+            drive_straight(x_coord);
         }
          // Second Quandrant
-        else if((signed_x_coord & (0x80)) && ~((signed_y_coord & (0x80)))){ 
-            
+        else if((signed_x_coord & (0x80)) && !((signed_y_coord & (0x80)))){ 
+            drive_straight(y_coord);
+            timer_2us(50000);
+            Turn_left();
+            timer_2us(50000);
+            drive_straight(x_coord);            
         }
          // Third Quadrant
         else if((signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
-            
+            Turn_180();
+            timer_2us(50000);
+            drive_straight(y_coord);
+            timer_2us(50000);
+            Turn_right();
+            timer_2us(50000);
+            drive_straight(x_coord);
         }
          // Fourth Quadrant
-        else if(~(signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
-            
+        else if(!(signed_x_coord & (0x80)) && ((signed_y_coord & (0x80)))){
+            Turn_180();
+            timer_2us(50000);
+            drive_straight(y_coord);
+            timer_2us(50000);
+            Turn_left();
+            timer_2us(50000);
+            drive_straight(x_coord);  
         }
         reset = 1;
     }
@@ -331,16 +348,16 @@ uint32_t read_R1_quad_enc(_Bool reset){
     return cnt;
 }
 
-int8_t get_xcoordinates(){
-    int8_t signed_x_coord = 0; 
+uint8_t get_xcoordinates(){
+    uint8_t signed_x_coord = 0; 
 
-    signed_x_coord |= SWITCHES >> 8;
+    signed_x_coord |= ((SWITCHES & 0xFF00) >> 8);
 
     return signed_x_coord;
 }
 
-int8_t get_ycoordinates(){
-    int8_t signed_y_coord = 0; 
+uint8_t get_ycoordinates(){
+    uint8_t signed_y_coord = 0; 
 
     signed_y_coord |= (SWITCHES & ~(0xFF00));
 
@@ -431,8 +448,8 @@ void drive_straight(uint8_t distance) {
     uint16_t pwmCnt = 0;
 
     // Initial calibrated offset — favoring slightly slower right motor
-    int16_t duty_left = 170;
-    int16_t duty_right = 160;
+    int16_t duty_left = DUTY_MOTION_START;
+    int16_t duty_right = DUTY_MOTION_START;
 
     read_R1_quad_enc(1);
     read_L1_quad_enc(1);
@@ -440,8 +457,7 @@ void drive_straight(uint8_t distance) {
     JC |= (1 << LEFT1_OFFSET) | (1 << RIGHT2_OFFSET);
     JC &= ~((1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET));
 
-    while (!((read_L1_quad_enc(0) / 5) >= distance && 
-             (read_R1_quad_enc(0) / 5) >= distance)) {
+    while (!(Distance_Stop(distance))) {
 
         if (pwmCnt <= duty_left)
             JC |= (1 << L_PWM_OFFSET);
@@ -469,11 +485,12 @@ void drive_straight(uint8_t distance) {
                 duty_left += 1;
             }
 
-            // Clamp
+           
             if (duty_left > PWM_TOP) duty_left = PWM_TOP;
             if (duty_right > PWM_TOP) duty_right = PWM_TOP;
             if (duty_left < 200) duty_left = 200;
             if (duty_right < 200) duty_right = 200;
+            
         }
     }
 
@@ -531,4 +548,13 @@ void coord_display(uint8_t x_coord, uint8_t y_coord, uint8_t signed_x_coord, uin
         sevenSegValue[1] = Neg_sevenSegLUT[(y_coord - (y_coord % 10)) / 10];
     }
     show_sseg(&sevenSegValue[0]);
+}
+
+_Bool Distance_Stop(uint8_t coord){
+    _Bool stop = false;
+
+    if(((read_R1_quad_enc(0) >> 5) >= (coord + 0x06)) && ((read_L1_quad_enc(0) >> 5) >= (coord + 0x06))){
+        stop = true;
+    }
+    return(stop);
 }
