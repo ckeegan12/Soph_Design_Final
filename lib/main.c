@@ -53,7 +53,7 @@
 #define R_PWM_OFFSET 3 // JC[3]
 #define RIGHT2_OFFSET 4 // JC[4]
 #define RIGHT1_OFFSET 5 // JC[5]
-#define DUTY_MOTION_START 150
+#define DUTY_MOTION_START 120
 #define PWM_TOP 255
 // Quad Encoder
 #define L1_QUAD_ENC_OFFSET 0 // JA[0]
@@ -145,8 +145,8 @@ int main (void){
         if(!(signed_x_coord & (0x80)) && !((signed_y_coord & (0x80)))){
             drive_straight(y_coord);
             timer_2us(50000);
-            //Turn_right();
-            timer_2us(50000);
+            Turn_right();
+            timer_2us(50000); 
             drive_straight(x_coord);
         }
          // Second Quandrant
@@ -446,6 +446,7 @@ void drive_straight(uint8_t distance) {
             (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
 
     uint16_t pwmCnt = 0;
+    uint16_t cycles = 0;
 
     // Initial calibrated offset — favoring slightly slower right motor
     int16_t duty_left = DUTY_MOTION_START;
@@ -471,26 +472,27 @@ void drive_straight(uint8_t distance) {
 
         if (++pwmCnt >= PWM_TOP) {
             pwmCnt = 0;
+            ++cycles;
 
             int32_t left_count = read_L1_quad_enc(0);
             int32_t right_count = read_R1_quad_enc(0);
             int32_t diff = left_count - right_count;
 
-            // Only correct if really off — and do it gently
-            if (diff > 3) {
+            if((cycles % 18) == 0){
+                
+                if (diff > -50) {
                 duty_left -= 1;
                 duty_right += 1;
-            } else if (diff < -3) {
+                } 
+                if (diff < 100) {
                 duty_right -= 1;
                 duty_left += 1;
+                }
             }
-
-           
             if (duty_left > PWM_TOP) duty_left = PWM_TOP;
             if (duty_right > PWM_TOP) duty_right = PWM_TOP;
-            if (duty_left < 200) duty_left = 200;
-            if (duty_right < 200) duty_right = 200;
-            
+            if (duty_left < DUTY_MOTION_START) duty_left = DUTY_MOTION_START;
+            if (duty_right < DUTY_MOTION_START) duty_right = DUTY_MOTION_START;
         }
     }
 
@@ -553,7 +555,7 @@ void coord_display(uint8_t x_coord, uint8_t y_coord, uint8_t signed_x_coord, uin
 _Bool Distance_Stop(uint8_t coord){
     _Bool stop = false;
 
-    if(((read_R1_quad_enc(0) >> 5) >= (coord + 0x06)) && ((read_L1_quad_enc(0) >> 5) >= (coord + 0x06))){
+    if(((read_R1_quad_enc(0) >> 5) >= (coord + 0x01)) && ((read_L1_quad_enc(0) >> 5) >= (coord + 0x01))){
         stop = true;
     }
     return(stop);
