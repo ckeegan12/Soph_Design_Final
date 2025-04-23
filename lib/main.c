@@ -53,7 +53,9 @@
 #define R_PWM_OFFSET 3 // JC[3]
 #define RIGHT2_OFFSET 4 // JC[4]
 #define RIGHT1_OFFSET 5 // JC[5]
-#define DUTY_MOTION_START 120
+#define DUTY_MOTION_START_RIGHT 150
+#define DUTY_MOTION_START_LEFT 160
+#define DUTY_MOTION_START 200
 #define PWM_TOP 255
 // Quad Encoder
 #define L1_QUAD_ENC_OFFSET 0 // JA[0]
@@ -449,8 +451,8 @@ void drive_straight(uint8_t distance) {
     uint16_t cycles = 0;
 
     // Initial calibrated offset — favoring slightly slower right motor
-    int16_t duty_left = DUTY_MOTION_START;
-    int16_t duty_right = DUTY_MOTION_START;
+    int16_t duty_left = DUTY_MOTION_START_LEFT;
+    int16_t duty_right = DUTY_MOTION_START_RIGHT;
 
     read_R1_quad_enc(1);
     read_L1_quad_enc(1);
@@ -478,21 +480,19 @@ void drive_straight(uint8_t distance) {
             int32_t right_count = read_R1_quad_enc(0);
             int32_t diff = left_count - right_count;
 
-            if((cycles % 18) == 0){
+            if((cycles % 10) == 0){
                 
-                if (diff > -50) {
+                if (diff > 0) {
                 duty_left -= 1;
-                duty_right += 1;
                 } 
                 if (diff < 100) {
-                duty_right -= 1;
                 duty_left += 1;
                 }
             }
             if (duty_left > PWM_TOP) duty_left = PWM_TOP;
             if (duty_right > PWM_TOP) duty_right = PWM_TOP;
-            if (duty_left < DUTY_MOTION_START) duty_left = DUTY_MOTION_START;
-            if (duty_right < DUTY_MOTION_START) duty_right = DUTY_MOTION_START;
+            if (duty_left < DUTY_MOTION_START_LEFT) duty_left = DUTY_MOTION_START_LEFT;
+            if (duty_right < DUTY_MOTION_START_RIGHT) duty_right = DUTY_MOTION_START_RIGHT;
         }
     }
 
@@ -555,7 +555,7 @@ void coord_display(uint8_t x_coord, uint8_t y_coord, uint8_t signed_x_coord, uin
 _Bool Distance_Stop(uint8_t coord){
     _Bool stop = false;
 
-    if(((read_R1_quad_enc(0) >> 5) >= (coord + 0x01)) && ((read_L1_quad_enc(0) >> 5) >= (coord + 0x01))){
+    if(((read_R1_quad_enc(0) >> 5) >= (coord + 0x09)) && ((read_L1_quad_enc(0) >> 5) >= (coord + 0x09))){
         stop = true;
     }
     return(stop);
