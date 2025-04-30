@@ -44,8 +44,9 @@
 
 // Constants
 #define INCREMENT 5
-#define TIMEOUT = 10000000 // How long to wait until assuming trig was lost
 #define ITP (uint32_t *)
+// Sensor Constants
+const uint32_t TIMEOUT = 10000000; // How long to wait until assuming trig was lost
 // Motor
 #define L_PWM_OFFSET 0 // JC[0]
 #define LEFT1_OFFSET 1 // JC[1]
@@ -80,7 +81,7 @@ void set_trig_pin();
 void clear_trig_pin();
 _Bool read_echo_pin();
 void show_sseg(uint8_t * sevenSegValue);
-void coord_display(uint8_t x_coord, uint8_t y_coord, uint8_t signed_x_coord, uint8_t signed_y_coord);
+void count_display(uint8_t count);
 _Bool UpButton_pressed();
 _Bool DownButton_pressed();
 _Bool LeftButton_pressed();
@@ -97,8 +98,11 @@ uint32_t read_R1_quad_enc(_Bool reset);
 // Drive Direction
 void Turn_left();
 void Turn_right();
+// Detection Functions
+
 
 int main (void){
+
     // One time initializations
     init_program();
     uint8_t x_coord;
@@ -107,16 +111,37 @@ int main (void){
     JA_DDR = 0x03;
     JB_DDR = 0x02;
     JC_DDR = 0x00;
+    JB_DDR = 0x02;
+    SEVEN_SEG = 0x00;
+
+    // Initializing Timer Values
+    TCSR0 = 0b010010010001;
+    TCR0 = 0x00000000;
+    restart_timer0();
+    TCSR1 = 0b010010010001;
+    TCR1 = 0x00000000;
+    restart_timer1();
+
+    // Tracking Variables
+    uint32_t distance = 0;      // Variable to compute distance of the object from the sensor
+    uint32_t count = 0;         // A counter variable
+    uint32_t time = 0;          //Variable to count the duration of echo
+
+    // State Enumerations
+    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
+    state_type state = send_trig;
+    state_type next_state = state;
 
     while(!UpButton_pressed()){
-        coord_display(0,0);  // Display zeros at start
+        coord_display(count);       // Display zeros at start
     }
 
     timer_2us(100000);    
 
     while(!(reset)){
  
-        }
+        // add maze code here
+    
         reset = 1;
     }
 
@@ -424,7 +449,7 @@ void drive_straight(uint8_t distance) {
             (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
 }
 
-void coord_display(uint8_t count){
+void count_display(uint8_t count){
     uint8_t sevenSegValue[4] = {0};
 
     uint8_t sevenSegLUT[10] = {
