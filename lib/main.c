@@ -91,17 +91,12 @@ uint32_t * convert_timer_to_hex_address (uint8_t timer_number);
 void configure_timers();
 void start_stopwatch(uint8_t timer_number);
 uint32_t read_stopwatch(uint8_t timer_number);
-uint8_t get_ycoordinates();
-uint8_t get_xcoordinates();
 // Motor Functions
 uint32_t read_L1_quad_enc(_Bool reset);
 uint32_t read_R1_quad_enc(_Bool reset);
 // Drive Direction
-_Bool Distance_Stop(uint8_t coord);
-void drive_straight(uint8_t coord);
 void Turn_left();
 void Turn_right();
-void Turn_180();
 
 int main (void){
     // One time initializations
@@ -112,11 +107,9 @@ int main (void){
     JA_DDR = 0x03;
     JB_DDR = 0x02;
     JC_DDR = 0x00;
-    
-    // coord_display(0, 0, 0, 0);
 
     while(!UpButton_pressed()){
-        coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
+        coord_display(0,0);  // Display zeros at start
     }
 
     timer_2us(100000);    
@@ -429,4 +422,23 @@ void drive_straight(uint8_t distance) {
     JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
             (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
             (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
+}
+
+void coord_display(uint8_t count){
+    uint8_t sevenSegValue[4] = {0};
+
+    uint8_t sevenSegLUT[10] = {
+	0xC0,
+        0xF9,
+        0xA4,
+        0xB0,
+        0x99,
+        0x92,
+        0x82,
+        0xF8,
+        0x80,
+        0x98,
+    };
+	sevenSegValue[0] = sevenSegLUT[count];
+    show_sseg(&sevenSegValue[0]);
 }
