@@ -188,24 +188,6 @@ int main (void){
  	}
 }
 
-// Function Implementation - Initialization
-void init_program(){
-    configure_timers();
-}
-
-// Function Implementation - Ultrasonic Sensors
-void set_trig_pin(){
-    JB |=1;
-}
-
-void clear_trig_pin(){
-    JB &=0;
-}
-
-_Bool read_echo_pin(){
-    return JB & (1<<1);
-}
-
 // Function implementation - Hardware Timers
 uint32_t * convert_timer_to_hex_address (uint8_t timer_number) {
     if (timer_number > 7)
