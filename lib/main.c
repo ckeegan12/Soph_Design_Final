@@ -63,6 +63,22 @@ const uint32_t TIMEOUT = 10000000; // How long to wait until assuming trig was l
 #define R1_QUAD_ENC_OFFSET 1 // JA[1]
 
 #define QUAD_ENC_TOP 10000
+
+#define TRIG1_BIT 0
+#define ECHO1_BIT 1
+#define TRIG2_BIT 2
+#define ECHO2_BIT 3
+#define JB        (*(unsigned volatile *) 0x40002000)
+#define JB_DDR    (*(unsigned volatile *) 0x40002004)
+#define TCSR0     (*(unsigned volatile *) 0x40009000)
+#define TCR0      (*(unsigned volatile *) 0x40009008)
+#define TCSR1     (*(unsigned volatile *) 0x40009010)
+#define TCR1      (*(unsigned volatile *) 0x40009018)
+#define TIMEOUT   10000000
+
+
+
+
 // Other
 const volatile uint32_t TCSR_OFFEST = 0;
 const volatile uint32_t TLR_OFFEST = 1;
@@ -101,17 +117,35 @@ void Turn_right();
 // Detection Functions
 
 
+void set_trig_pin();
+void set_trig2_pin();
+
+void clear_trig_pin();
+void clear_trig2_pin();
+
+_Bool read_echo_pin();
+_Bool read_echo2_pin();
+
+void restart_timer0();
+void restart_timer1();
+
+uint32_t measure_distance();
+uint32_t measure_distance_sensor2();
+
+uint32_t get_timer1_value_us();
+void timer_2us(unsigned t);
+
+
+
+
 int main (void){
 
     // One time initializations
     init_program();
-    uint8_t x_coord;
-    uint8_t y_coord;
     int reset = 0;
     JA_DDR = 0x03;
-    JB_DDR = 0x02;
     JC_DDR = 0x00;
-    JB_DDR = 0x02;
+    JB_DDR = 0x05;
     SEVEN_SEG = 0x00;
 
     // Initializing Timer Values
@@ -122,51 +156,11 @@ int main (void){
     TCR1 = 0x00000000;
     restart_timer1();
 
-    // Tracking Variables
-    uint32_t distance = 0;      // Variable to compute distance of the object from the sensor
-    uint32_t count = 0;         // A counter variable
-    uint32_t time = 0;          //Variable to count the duration of echo
-
-    // State Enumerations
-    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
-    state_type state = send_trig;
-    state_type next_state = state;
-
-    while(!UpButton_pressed()){
-        coord_display(count);       // Display zeros at start
-    }
-
-    timer_2us(100000);    
-
-    while(!(reset)){
- 
-        // add maze code here
-    
-        reset = 1;
-    }
-
- 	while (1)
- 	{
-        coord_display(x_coord, y_coord, signed_x_coord, signed_y_coord);
- 	}
 }
 
 // Function Implementation - Initialization
 void init_program(){
     configure_timers();
-}
-
-// Function Implementation - Ultrasonic Sensors
-void set_trig_pin(){
-    JB |=1;
-}
-
-void clear_trig_pin(){
-    JB &=0;
-}
-
-_Bool read_echo_pin(){
-    return JB & (1<<1);
 }
 
 // Function implementation - Hardware Timers
@@ -243,12 +237,6 @@ _Bool delay_half_sec(){
     return false;
 }
 
-void timer_2us(unsigned t)
-{
-	volatile unsigned cntr1;
-	while(t--)
-		for( cntr1=0; cntr1 < 8; cntr1++);
-}
 
 // Function implementation - Button debounces
 _Bool UpButton_pressed()
@@ -466,4 +454,95 @@ void count_display(uint8_t count){
     };
 	sevenSegValue[0] = sevenSegLUT[count];
     show_sseg(&sevenSegValue[0]);
+}
+
+void set_trig_pin() {
+    JB |= (1 << 0);
+}
+
+void clear_trig_pin() {
+    JB &= ~(1 << 0);
+}
+
+_Bool read_echo_pin() {
+    return (JB & (1 << 1)) != 0;
+}
+
+void restart_timer0() {
+    TCSR0 &= ~(1 << 7);
+    TCSR0 |=  (1 << 5);
+    TCSR0 &= ~(1 << 5);
+    TCSR0 |=  (1 << 7);
+}
+
+void restart_timer1() {
+    TCSR1 &= ~(1 << 7);
+    TCSR1 |=  (1 << 5);
+    TCSR1 &= ~(1 << 5);
+    TCSR1 |=  (1 << 7);
+}
+
+uint32_t get_timer1_value_us() {
+    TCSR1 |= (1 << 8);
+    return TCR1 / 100;
+}
+
+void timer_2us(unsigned t) {
+    volatile unsigned cntr1;
+    while (t--) {
+        for (cntr1 = 0; cntr1 < 8; cntr1++);
+    }
+}
+
+uint32_t measure_distance() {
+    uint32_t count = 0;
+    uint32_t time = 0;
+
+    set_trig_pin();
+    timer_2us(5);
+    clear_trig_pin();
+
+    restart_timer0();
+    while (!read_echo_pin()) {
+        if (++count >= TIMEOUT) return 0xFFFFFFFF;
+    }
+
+    restart_timer1();
+    while (read_echo_pin());
+
+    time = get_timer1_value_us();
+    return time / 148;
+}
+
+uint32_t measure_distance_sensor2() {
+    uint32_t count = 0;
+    uint32_t time = 0;
+
+    set_trig2_pin();
+    timer_2us(5);  // ~10 us pulse
+    clear_trig2_pin();
+
+    restart_timer0();
+    while (!read_echo2_pin()) {
+        if (++count >= TIMEOUT) return 0xFFFFFFFF;
+    }
+
+    restart_timer1();
+    while (read_echo2_pin());
+
+    time = get_timer1_value_us();
+    return time / 148;
+}
+
+
+void set_trig2_pin() {
+    JB |= (1 << TRIG2_BIT);
+}
+
+void clear_trig2_pin() {
+    JB &= ~(1 << TRIG2_BIT);
+}
+
+_Bool read_echo2_pin() {
+    return (JB & (1 << ECHO2_BIT)) != 0;
 }
