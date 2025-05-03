@@ -45,8 +45,7 @@
 // Constants
 #define INCREMENT 5
 #define ITP (uint32_t *)
-// Sensor Constants
-const uint32_t TIMEOUT = 10000000; // How long to wait until assuming trig was lost
+
 // Motor
 #define L_PWM_OFFSET 0 // JC[0]
 #define LEFT1_OFFSET 1 // JC[1]
@@ -58,12 +57,13 @@ const uint32_t TIMEOUT = 10000000; // How long to wait until assuming trig was l
 #define DUTY_MOTION_START_LEFT 160
 #define DUTY_MOTION_START 200
 #define PWM_TOP 255
+
 // Quad Encoder
 #define L1_QUAD_ENC_OFFSET 0 // JA[0]
 #define R1_QUAD_ENC_OFFSET 1 // JA[1]
-
 #define QUAD_ENC_TOP 10000
 
+// Sensor
 #define TRIG1_BIT 0
 #define ECHO1_BIT 1
 #define TRIG2_BIT 2
@@ -76,9 +76,6 @@ const uint32_t TIMEOUT = 10000000; // How long to wait until assuming trig was l
 #define TCR1      (*(unsigned volatile *) 0x40009018)
 #define TIMEOUT   10000000
 
-
-
-
 // Other
 const volatile uint32_t TCSR_OFFEST = 0;
 const volatile uint32_t TLR_OFFEST = 1;
@@ -89,13 +86,10 @@ const uint32_t * TIMERS[] = { ITP 0x40009000, ITP 0x40009100, ITP 0x4000A000, IT
                               ITP 0x4000B000, ITP 0x4000B100, ITP 0x4000C000, ITP 0x4000C100};
 
 // Function declarations - implemented below
-void init_program(); // One Time Initializations
+void init_program();
 _Bool delay_1s();
 _Bool delay_half_sec();
 void timer_2us(unsigned t);
-void set_trig_pin();
-void clear_trig_pin();
-_Bool read_echo_pin();
 void show_sseg(uint8_t * sevenSegValue);
 void count_display(uint8_t count);
 _Bool UpButton_pressed();
@@ -108,33 +102,31 @@ uint32_t * convert_timer_to_hex_address (uint8_t timer_number);
 void configure_timers();
 void start_stopwatch(uint8_t timer_number);
 uint32_t read_stopwatch(uint8_t timer_number);
+
 // Motor Functions
 uint32_t read_L1_quad_enc(_Bool reset);
 uint32_t read_R1_quad_enc(_Bool reset);
+
 // Drive Direction
 void Turn_left();
 void Turn_right();
+
 // Detection Functions
-
-
-void set_trig_pin();
+// sensor1 = front sensor | sensor2 = left sensor
+void set_trig1_pin();  
 void set_trig2_pin();
-
-void clear_trig_pin();
+void clear_trig1_pin();
 void clear_trig2_pin();
-
-_Bool read_echo_pin();
+_Bool read_echo1_pin();
 _Bool read_echo2_pin();
+uint32_t Sensor1_distance();
+uint32_t Sensor2_distance();
 
-void restart_timer0();
-void restart_timer1();
-
-uint32_t measure_distance();
-uint32_t measure_distance_sensor2();
-
+// Timers
 uint32_t get_timer1_value_us();
 void timer_2us(unsigned t);
-
+void restart_timer0(); // Timer for front sensor
+void restart_timer1(); // Timer for left sensor
 
 
 
@@ -456,15 +448,18 @@ void count_display(uint8_t count){
     show_sseg(&sevenSegValue[0]);
 }
 
-void set_trig_pin() {
+void set_trig1_pin() {
+    // Sets trig pin for front sensor
     JB |= (1 << 0);
 }
 
-void clear_trig_pin() {
+void clear_trig1_pin() {
+    // Clears trig pin from front sensor
     JB &= ~(1 << 0);
 }
 
-_Bool read_echo_pin() {
+_Bool read_echo1_pin() {
+    // Reads echo pin from front sensor
     return (JB & (1 << 1)) != 0;
 }
 
@@ -494,55 +489,173 @@ void timer_2us(unsigned t) {
     }
 }
 
-uint32_t measure_distance() {
-    uint32_t count = 0;
-    uint32_t time = 0;
-
-    set_trig_pin();
-    timer_2us(5);
-    clear_trig_pin();
-
-    restart_timer0();
-    while (!read_echo_pin()) {
-        if (++count >= TIMEOUT) return 0xFFFFFFFF;
-    }
-
-    restart_timer1();
-    while (read_echo_pin());
-
-    time = get_timer1_value_us();
-    return time / 148;
-}
-
-uint32_t measure_distance_sensor2() {
-    uint32_t count = 0;
-    uint32_t time = 0;
-
-    set_trig2_pin();
-    timer_2us(5);  // ~10 us pulse
-    clear_trig2_pin();
-
-    restart_timer0();
-    while (!read_echo2_pin()) {
-        if (++count >= TIMEOUT) return 0xFFFFFFFF;
-    }
-
-    restart_timer1();
-    while (read_echo2_pin());
-
-    time = get_timer1_value_us();
-    return time / 148;
-}
-
-
 void set_trig2_pin() {
+    // Set trig pin for left sensor
     JB |= (1 << TRIG2_BIT);
 }
 
 void clear_trig2_pin() {
+    // Clears trig pin for left sensor
     JB &= ~(1 << TRIG2_BIT);
 }
 
 _Bool read_echo2_pin() {
+    // Reads echo pin from left sensor
     return (JB & (1 << ECHO2_BIT)) != 0;
+}
+
+uint32_t Sensor1_distance(void){
+    // Distance calculation for front sensor
+    // Tracking Variables
+    uint32_t distance = 0; // variable to compute distance of the object from the sensor
+    uint32_t count = 0; // a counter variable
+    uint32_t time = 0; // variable to count the duration of echo
+    // State Enumerations
+    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
+    state_type state = send_trig;
+    state_type next_state = state;
+
+    switch (state) {
+        case send_trig:   
+            //send 10us pulse to trig pin then move to next state
+            JB &= ~(0x02); // change to match pin combo for front sensor
+            timer_2us(5);
+            JB |= 0x02;  // change so it is set trig function
+            timer_2us(5);
+            JB &= ~(0x02);
+            count = 0;
+            next_state = wait_for_echo;
+            
+        break;
+
+        case wait_for_echo:    
+            // Read the echo pin, if recieved restart timer then move to echo count
+            // If echo not recieved then count till TIMEOUT
+            if (read_echo1_pin()){
+                restart_timer0();
+                next_state = count_echo_duration;
+                break;
+            }
+            else if (count == TIMEOUT){
+                next_state = cooldown;
+                break;
+            }
+            else{
+                count = count + 1;
+            }
+
+        break;
+
+        case count_echo_duration:
+            // while echo is high stay in count echo until falling edge
+            while(read_echo1_pin());
+            next_state = echo_falling_edge;
+        
+        break;
+
+        case echo_falling_edge:
+            // Get timer value to get duration of echo high
+            // Compute distance in inches how far object is away from sensor
+            time = get_timer0_value_us(); 
+            distance = (time*0.00034)/2; // Distance from sensor
+            next_state = cooldown;
+
+        break;
+
+        case cooldown:
+            // Wait half second
+            // Send trig after falling edge
+            if (delay_half_sec()){
+            next_state = send_trig;
+            }
+
+        break;
+
+        default:
+            // If no cases met send trig
+            next_state = send_trig;
+
+        break;
+        state = next_state; // Assign state to next_state
+    }
+    return(distance);
+}
+
+uint32_t Sensor2_distance(void){
+    // Distance calculation for left sensor
+
+    // Tracking Variables
+    uint32_t distance = 0; // variable to compute distance of the object from the sensor
+    uint32_t count = 0; // a counter variable
+    uint32_t time = 0; // variable to count the duration of echo
+
+    // State Enumerations
+    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
+    state_type state = send_trig;
+    state_type next_state = state;
+
+    switch (state) {
+        case send_trig:   
+            //send 10us pulse to trig pin then move to next state
+            JB &= ~(0x02); // change to match pin combo for front sensor
+            timer_2us(5);
+            JB |= 0x02;  // change so it is set trig function
+            timer_2us(5);
+            JB &= ~(0x02);
+            count = 0;
+            next_state = wait_for_echo;
+            
+        break;
+
+        case wait_for_echo:    
+            // Read the echo pin, if recieved restart timer then move to echo count
+            // If echo not recieved then count till TIMEOUT
+            if (read_echo2_pin()){
+                restart_timer1();
+                next_state = count_echo_duration;
+                break;
+            }
+            else if (count == TIMEOUT){
+                next_state = cooldown;
+                break;
+            }
+            else{
+                count = count + 1;
+            }
+
+        break;
+
+        case count_echo_duration:
+            // while echo is high stay in count echo until falling edge
+            while(read_echo2_pin());
+            next_state = echo_falling_edge;
+        
+        break;
+
+        case echo_falling_edge:
+            // Get timer value to get duration of echo high
+            // Compute distance in inches how far object is away from sensor
+            time = get_timer1_value_us(); 
+            distance = (time*0.00034)/2; // Distance from sensor
+            next_state = cooldown;
+
+        break;
+
+        case cooldown:
+            // Wait half second
+            // Send trig after falling edge
+            if (delay_half_sec()){
+            next_state = send_trig;
+            }
+
+        break;
+
+        default:
+            // If no cases met send trig
+            next_state = send_trig;
+
+        break;
+        state = next_state; // Assign state to next_state
+    }
+    return(distance);
 }
