@@ -96,16 +96,13 @@ _Bool UpButton_pressed();
 _Bool DownButton_pressed();
 _Bool LeftButton_pressed();
 _Bool RightButton_pressed();
-uint32_t read_L1_quad_enc(_Bool reset);
-uint32_t read_R1_quad_enc(_Bool reset);
 uint32_t * convert_timer_to_hex_address (uint8_t timer_number);
-void configure_timers();
-void start_stopwatch(uint8_t timer_number);
-uint32_t read_stopwatch(uint8_t timer_number);
 
 // Motor Functions
 uint32_t read_L1_quad_enc(_Bool reset);
 uint32_t read_R1_quad_enc(_Bool reset);
+void Stop_motors();
+void Pass_object();
 
 // Drive Direction
 void Turn_left();
@@ -123,10 +120,13 @@ uint32_t Sensor1_distance();
 uint32_t Sensor2_distance();
 
 // Timers
+uint32_t read_stopwatch(uint8_t timer_number);
 uint32_t get_timer1_value_us();
 void timer_2us(unsigned t);
 void restart_timer0(); // Timer for front sensor
 void restart_timer1(); // Timer for left sensor
+void configure_timers();
+void start_stopwatch(uint8_t timer_number);
 
 
 
@@ -134,7 +134,7 @@ int main (void){
 
     // One time initializations
     init_program();
-    int reset = 0;
+    _bool reset = false;
     JA_DDR = 0x03;
     JC_DDR = 0x00;
     JB_DDR = 0x05;
@@ -147,6 +147,39 @@ int main (void){
     TCSR1 = 0b010010010001;
     TCR1 = 0x00000000;
     restart_timer1();
+
+    // Navigating parameters
+    uint32_t front_distance;
+    uint32_t left_distance;
+    int front_threshold = 5; // Distance threshold to turn after object in front
+    int left_threshold = 10; // Distance threshold to turn after passing object
+
+    // Navigating loop
+    while(!reset){
+
+        // Get sensor distances
+        front_distance = Sensor1_distance();
+        left_distance = Sensor2_distance();
+
+        // put drive straight function here
+
+        if(front_distance < front_threshold){
+            // check if object is within 5in of the front of bot
+            Stop_motors();
+            timer_2us(50000);  // change so its around 3 seconds
+            Turn_right();
+            timer_2us(50000);
+
+        }
+        if(left_distance > left_distance){
+            // check if object is passed
+            Pass_object();
+            timer_2us(50000);
+            Turn_left();
+
+        }
+        // add code to detect end
+    }
 
 }
 
@@ -658,4 +691,13 @@ uint32_t Sensor2_distance(void){
         state = next_state; // Assign state to next_state
     }
     return(distance);
+}
+
+void Stop_motors(void){
+    // add code to stop all motors from spinning 
+}
+
+void Pass_object(void){
+    // add code that drive straight for a couple seconds
+    // pass object after passing left sensor distance > left_threshold
 }
