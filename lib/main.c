@@ -1,9 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include <strings.h>
-#include <sys/_intsup.h>
+#include <stdio.h>
 #include <xil_printf.h>
-#include <xil_types.h>
 
 #define BUTTONS 	(* (unsigned volatile *) 0x40000000) // 4  pin In		btnU, btnL, btnR, btnD
 #define JA 			(* (unsigned volatile *) 0x40001000) // 8  pin In/Out	JA[7:0]
@@ -87,9 +85,6 @@ const uint32_t * TIMERS[] = { ITP 0x40009000, ITP 0x40009100, ITP 0x4000A000, IT
 
 // Function declarations - implemented below
 void init_program();
-_Bool delay_1s();
-_Bool delay_half_sec();
-void timer_2us(unsigned t);
 void show_sseg(uint8_t * sevenSegValue);
 void count_display(uint8_t count);
 _Bool UpButton_pressed();
@@ -121,20 +116,22 @@ uint32_t Sensor2_distance();
 
 // Timers
 uint32_t read_stopwatch(uint8_t timer_number);
-uint32_t get_timer1_value_us();
+uint32_t get_timer1_value_us(); // Timer for left sensor
+uint32_t get_timer0_value_us(); // Timer for front sensor
 void timer_2us(unsigned t);
-void restart_timer0(); // Timer for front sensor
-void restart_timer1(); // Timer for left sensor
+void restart_timer0(); 
+void restart_timer1(); 
 void configure_timers();
 void start_stopwatch(uint8_t timer_number);
-
-
+void timer_2us(unsigned t);
+_Bool delay_1s();
+_Bool delay_half_sec();
 
 int main (void){
 
     // One time initializations
     init_program();
-    _bool reset = false;
+    _Bool reset = 0;
     JA_DDR = 0x03;
     JC_DDR = 0x00;
     JB_DDR = 0x05;
@@ -162,6 +159,7 @@ int main (void){
         left_distance = Sensor2_distance();
 
         // put drive straight function here
+        // change if statements to case statements
 
         if(front_distance < front_threshold){
             // check if object is within 5in of the front of bot
@@ -171,7 +169,7 @@ int main (void){
             timer_2us(50000);
 
         }
-        if(left_distance > left_distance){
+        if(left_distance > left_threshold){
             // check if object is passed
             Pass_object();
             timer_2us(50000);
@@ -543,8 +541,17 @@ uint32_t Sensor1_distance(void){
     uint32_t distance = 0; // variable to compute distance of the object from the sensor
     uint32_t count = 0; // a counter variable
     uint32_t time = 0; // variable to count the duration of echo
+
     // State Enumerations
-    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
+    typedef enum state_type 
+    {
+        send_trig, 
+        wait_for_echo, 
+        count_echo_duration, 
+        echo_falling_edge, 
+        cooldown
+    } state_type;
+
     state_type state = send_trig;
     state_type next_state = state;
 
@@ -623,7 +630,15 @@ uint32_t Sensor2_distance(void){
     uint32_t time = 0; // variable to count the duration of echo
 
     // State Enumerations
-    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
+    typedef enum state_type 
+    {
+        send_trig, 
+        wait_for_echo, 
+        count_echo_duration, 
+        echo_falling_edge, 
+        cooldown
+    } state_type;
+
     state_type state = send_trig;
     state_type next_state = state;
 
