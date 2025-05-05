@@ -1,8 +1,9 @@
 #include <stdint.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <xil_printf.h>
+#include <stdbool.h>
 
+// Hardware Addresses
 #define BUTTONS 	(* (unsigned volatile *) 0x40000000) // 4  pin In		btnU, btnL, btnR, btnD
 #define JA 			(* (unsigned volatile *) 0x40001000) // 8  pin In/Out	JA[7:0]
 #define JA_DDR 		(* (unsigned volatile *) 0x40001004) // 8  pin DDR,		1 means input, 0 means output
@@ -66,8 +67,6 @@
 #define ECHO1_BIT 1
 #define TRIG2_BIT 2
 #define ECHO2_BIT 3
-#define JB        (*(unsigned volatile *) 0x40002000)
-#define JB_DDR    (*(unsigned volatile *) 0x40002004)
 #define TCSR0     (*(unsigned volatile *) 0x40009000)
 #define TCR0      (*(unsigned volatile *) 0x40009008)
 #define TCSR1     (*(unsigned volatile *) 0x40009010)
@@ -111,16 +110,12 @@ void clear_trig1_pin();
 void clear_trig2_pin();
 _Bool read_echo1_pin();
 _Bool read_echo2_pin();
-uint32_t Sensor1_distance();
-uint32_t Sensor2_distance();
+uint8_t Sensor1_distance();
+uint8_t Sensor2_distance();
 
 // Timers
 uint32_t read_stopwatch(uint8_t timer_number);
-uint32_t get_timer1_value_us(); // Timer for left sensor
-uint32_t get_timer0_value_us(); // Timer for front sensor
 void timer_2us(unsigned t);
-void restart_timer0(); 
-void restart_timer1(); 
 void configure_timers();
 void start_stopwatch(uint8_t timer_number);
 void timer_2us(unsigned t);
@@ -131,52 +126,26 @@ int main (void){
 
     // One time initializations
     init_program();
-    _Bool reset = 0;
     JA_DDR = 0x03;
     JC_DDR = 0x00;
-    JB_DDR = 0x05;
-    SEVEN_SEG = 0x00;
+    JB_DDR = 0x0A;
 
-    // Initializing Timer Values
-    TCSR0 = 0b010010010001;
-    TCR0 = 0x00000000;
-    restart_timer0();
-    TCSR1 = 0b010010010001;
-    TCR1 = 0x00000000;
-    restart_timer1();
-
-    // Navigating parameters
-    uint32_t front_distance;
-    uint32_t left_distance;
-    int front_threshold = 5; // Distance threshold to turn after object in front
-    int left_threshold = 10; // Distance threshold to turn after passing object
+    /* Navigating parameters
+    uint32_t front_threshold = 5; // Distance threshold to turn after object in front
+    uint32_t left_threshold = 10; // Distance threshold to turn after passing object
+    uint8_t count = 0; // Sensor count 
+    */
 
     // Navigating loop
-    while(!reset){
-
-        // Get sensor distances
-        front_distance = Sensor1_distance();
-        left_distance = Sensor2_distance();
-
-        // put drive straight function here
+    while(1){
         // change if statements to case statements
 
-        if(front_distance < front_threshold){
-            // check if object is within 5in of the front of bot
-            Stop_motors();
-            timer_2us(50000);  // change so its around 3 seconds
-            Turn_right();
-            timer_2us(50000);
+        // Sensor count
+        //count_display(count);
 
-        }
-        if(left_distance > left_threshold){
-            // check if object is passed
-            Pass_object();
-            timer_2us(50000);
-            Turn_left();
-
-        }
-        // add code to detect end
+        // Test code //
+        xil_printf("front distance: %d\n",Sensor1_distance());
+        
     }
 
 }
@@ -326,7 +295,7 @@ uint32_t read_R1_quad_enc(_Bool reset){
 
 void Turn_left(){
     // Reset motor direction and PWM pins
-JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
+    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
 
   
     _Bool EndR = 0;
@@ -400,7 +369,7 @@ void Turn_180(){
     Turn_right();
 }
 
-void drive_straight(uint8_t distance) {
+/*void drive_straight(uint8_t distance) {
     JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
             (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
             (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
@@ -458,13 +427,13 @@ void drive_straight(uint8_t distance) {
     JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
             (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
             (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
-}
+}*/
 
 void count_display(uint8_t count){
     uint8_t sevenSegValue[4] = {0};
 
     uint8_t sevenSegLUT[10] = {
-	0xC0,
+	    0xC0,
         0xF9,
         0xA4,
         0xB0,
@@ -476,41 +445,42 @@ void count_display(uint8_t count){
         0x98,
     };
 	sevenSegValue[0] = sevenSegLUT[count];
+    sevenSegValue[1] = sevenSegLUT[0];
+    sevenSegValue[2] = sevenSegLUT[0];
+    sevenSegValue[3] = sevenSegLUT[0];
     show_sseg(&sevenSegValue[0]);
 }
 
-void set_trig1_pin() {
-    // Sets trig pin for front sensor
-    JB |= (1 << 0);
+void set_trig1_pin(){
+    // set trig of front sensor
+    JB |= 0x01;
 }
 
-void clear_trig1_pin() {
-    // Clears trig pin from front sensor
-    JB &= ~(1 << 0);
+void clear_trig1_pin(){
+    // clear trig of front sensor
+    JB &= ~(0x01);
 }
 
-_Bool read_echo1_pin() {
-    // Reads echo pin from front sensor
-    return (JB & (1 << 1)) != 0;
+_Bool read_echo1_pin(){
+    // reads front sensor echo pin
+    _Bool echo = JB & 0x02;
+    return echo;
 }
 
-void restart_timer0() {
-    TCSR0 &= ~(1 << 7);
-    TCSR0 |=  (1 << 5);
-    TCSR0 &= ~(1 << 5);
-    TCSR0 |=  (1 << 7);
+void set_trig2_pin(){
+    // set trig of left sensor
+    JB |= 0x04;
 }
 
-void restart_timer1() {
-    TCSR1 &= ~(1 << 7);
-    TCSR1 |=  (1 << 5);
-    TCSR1 &= ~(1 << 5);
-    TCSR1 |=  (1 << 7);
+void clear_trig2_pin(){
+    // clear trig of left sensor
+    JB &= ~(0x04);
 }
 
-uint32_t get_timer1_value_us() {
-    TCSR1 |= (1 << 8);
-    return TCR1 / 100;
+_Bool read_echo2_pin(){
+    // reads left sensor echo pin
+    bool echo = JB & 0x08;
+    return echo;
 }
 
 void timer_2us(unsigned t) {
@@ -520,49 +490,26 @@ void timer_2us(unsigned t) {
     }
 }
 
-void set_trig2_pin() {
-    // Set trig pin for left sensor
-    JB |= (1 << TRIG2_BIT);
-}
-
-void clear_trig2_pin() {
-    // Clears trig pin for left sensor
-    JB &= ~(1 << TRIG2_BIT);
-}
-
-_Bool read_echo2_pin() {
-    // Reads echo pin from left sensor
-    return (JB & (1 << ECHO2_BIT)) != 0;
-}
-
-uint32_t Sensor1_distance(void){
+uint8_t Sensor1_distance(){
     // Distance calculation for front sensor
     // Tracking Variables
-    uint32_t distance = 0; // variable to compute distance of the object from the sensor
+    uint8_t distance = 0; // variable to compute distance of the object from the sensor
     uint32_t count = 0; // a counter variable
     uint32_t time = 0; // variable to count the duration of echo
 
     // State Enumerations
-    typedef enum state_type 
-    {
-        send_trig, 
-        wait_for_echo, 
-        count_echo_duration, 
-        echo_falling_edge, 
-        cooldown
-    } state_type;
-
-    state_type state = send_trig;
-    state_type next_state = state;
-
+    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
+    static enum state_type state = send_trig;
+    enum state_type next_state = state;
+    
     switch (state) {
         case send_trig:   
             //send 10us pulse to trig pin then move to next state
-            JB &= ~(0x02); // change to match pin combo for front sensor
+            clear_trig1_pin();
             timer_2us(5);
-            JB |= 0x02;  // change so it is set trig function
+            set_trig1_pin();  
             timer_2us(5);
-            JB &= ~(0x02);
+            clear_trig1_pin();
             count = 0;
             next_state = wait_for_echo;
             
@@ -572,7 +519,7 @@ uint32_t Sensor1_distance(void){
             // Read the echo pin, if recieved restart timer then move to echo count
             // If echo not recieved then count till TIMEOUT
             if (read_echo1_pin()){
-                restart_timer0();
+                start_stopwatch(1);
                 next_state = count_echo_duration;
                 break;
             }
@@ -596,7 +543,7 @@ uint32_t Sensor1_distance(void){
         case echo_falling_edge:
             // Get timer value to get duration of echo high
             // Compute distance in inches how far object is away from sensor
-            time = get_timer0_value_us(); 
+            time = read_stopwatch(1); 
             distance = (time*0.00034)/2; // Distance from sensor
             next_state = cooldown;
 
@@ -616,40 +563,33 @@ uint32_t Sensor1_distance(void){
             next_state = send_trig;
 
         break;
-        state = next_state; // Assign state to next_state
+        
     }
+    state = next_state; // Assign state to next_state
     return(distance);
 }
 
-uint32_t Sensor2_distance(void){
+uint8_t Sensor2_distance(void){
     // Distance calculation for left sensor
 
     // Tracking Variables
-    uint32_t distance = 0; // variable to compute distance of the object from the sensor
+    uint8_t distance = 0; // variable to compute distance of the object from the sensor
     uint32_t count = 0; // a counter variable
     uint32_t time = 0; // variable to count the duration of echo
 
     // State Enumerations
-    typedef enum state_type 
-    {
-        send_trig, 
-        wait_for_echo, 
-        count_echo_duration, 
-        echo_falling_edge, 
-        cooldown
-    } state_type;
-
-    state_type state = send_trig;
-    state_type next_state = state;
+    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
+    static enum state_type state = send_trig;
+    enum state_type next_state = state;
 
     switch (state) {
         case send_trig:   
             //send 10us pulse to trig pin then move to next state
-            JB &= ~(0x02); // change to match pin combo for front sensor
+            clear_trig2_pin();
             timer_2us(5);
-            JB |= 0x02;  // change so it is set trig function
+            set_trig2_pin();
             timer_2us(5);
-            JB &= ~(0x02);
+            clear_trig2_pin();
             count = 0;
             next_state = wait_for_echo;
             
@@ -659,7 +599,7 @@ uint32_t Sensor2_distance(void){
             // Read the echo pin, if recieved restart timer then move to echo count
             // If echo not recieved then count till TIMEOUT
             if (read_echo2_pin()){
-                restart_timer1();
+                start_stopwatch(2);
                 next_state = count_echo_duration;
                 break;
             }
@@ -683,7 +623,7 @@ uint32_t Sensor2_distance(void){
         case echo_falling_edge:
             // Get timer value to get duration of echo high
             // Compute distance in inches how far object is away from sensor
-            time = get_timer1_value_us(); 
+            time = read_stopwatch(2); 
             distance = (time*0.00034)/2; // Distance from sensor
             next_state = cooldown;
 
@@ -703,8 +643,9 @@ uint32_t Sensor2_distance(void){
             next_state = send_trig;
 
         break;
-        state = next_state; // Assign state to next_state
+        
     }
+    state = next_state; // Assign state to next_state
     return(distance);
 }
 
