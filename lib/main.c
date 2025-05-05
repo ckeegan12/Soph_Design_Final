@@ -132,16 +132,16 @@ int main (void){
 
     /* Navigating parameters
     uint32_t front_threshold = 5; // Distance threshold to turn after object in front
-    uint32_t left_threshold = 10; // Distance threshold to turn after passing object
+    uint32_t left_threshold = 10; // Distance threshold to turn after passing object */
     uint8_t count = 0; // Sensor count 
-    */
+    
 
     // Navigating loop
     while(1){
         // change if statements to case statements
 
         // Sensor count
-        //count_display(count);
+        count_display(count);
 
         // Test code //
         xil_printf("front distance: %d\n",Sensor1_distance());
@@ -501,72 +501,65 @@ uint8_t Sensor1_distance(){
     enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
     static enum state_type state = send_trig;
     enum state_type next_state = state;
-    
-    switch (state) {
-        case send_trig:   
-            //send 10us pulse to trig pin then move to next state
-            clear_trig1_pin();
-            timer_2us(5);
-            set_trig1_pin();  
-            timer_2us(5);
-            clear_trig1_pin();
-            count = 0;
-            next_state = wait_for_echo;
+    while(1){
+        switch (state) {
+            case send_trig:   
+                //send 10us pulse to trig pin then move to next state
+                clear_trig1_pin();
+                timer_2us(5);
+                set_trig1_pin();  
+                timer_2us(5);
+                clear_trig1_pin();
+                count = 0;
+                next_state = wait_for_echo;
+                
+            break;
+
+            case wait_for_echo:    
+                // Read the echo pin, if recieved restart timer then move to echo count
+                // If echo not recieved then count till TIMEOUT
+                if (read_echo1_pin()){
+                    start_stopwatch(1);
+                    next_state = count_echo_duration;
+                    break;
+                }
+                else if (count == TIMEOUT){
+                    next_state = send_trig;
+                    return(100);
+                    break;
+                }
+                else{
+                    count = count + 1;
+                }
+
+            break;
+
+            case count_echo_duration:
+                // while echo is high stay in count echo until falling edge
+                while(read_echo1_pin());
+                next_state = echo_falling_edge;
             
-        break;
+            break;
 
-        case wait_for_echo:    
-            // Read the echo pin, if recieved restart timer then move to echo count
-            // If echo not recieved then count till TIMEOUT
-            if (read_echo1_pin()){
-                start_stopwatch(1);
-                next_state = count_echo_duration;
-                break;
-            }
-            else if (count == TIMEOUT){
-                next_state = cooldown;
-                break;
-            }
-            else{
-                count = count + 1;
-            }
+            case echo_falling_edge:
+                // Get timer value to get duration of echo high
+                // Compute distance in inches how far object is away from sensor
+                time = read_stopwatch(1); 
+                distance = (time*0.00034)/2; // Distance from sensor
+                next_state = send_trig;
+                return(distance);
 
-        break;
+            break;
 
-        case count_echo_duration:
-            // while echo is high stay in count echo until falling edge
-            while(read_echo1_pin());
-            next_state = echo_falling_edge;
-        
-        break;
+            default:
+                // If no cases met send trig
+                next_state = send_trig;
 
-        case echo_falling_edge:
-            // Get timer value to get duration of echo high
-            // Compute distance in inches how far object is away from sensor
-            time = read_stopwatch(1); 
-            distance = (time*0.00034)/2; // Distance from sensor
-            next_state = cooldown;
-
-        break;
-
-        case cooldown:
-            // Wait half second
-            // Send trig after falling edge
-            if (delay_half_sec()){
-            next_state = send_trig;
-            }
-
-        break;
-
-        default:
-            // If no cases met send trig
-            next_state = send_trig;
-
-        break;
-        
+            break;
+            
+        }
+        state = next_state; // Assign state to next_state
     }
-    state = next_state; // Assign state to next_state
-    return(distance);
 }
 
 uint8_t Sensor2_distance(void){
