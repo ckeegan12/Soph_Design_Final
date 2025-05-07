@@ -153,7 +153,6 @@ int main (void){
         left_distance = Sensor2_distance();
 
 
-        xil_printf(left_distance);
 
 
 
