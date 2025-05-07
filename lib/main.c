@@ -150,52 +150,58 @@ int main (void){
 
         // Sensor distance parameters
         front_distance = Sensor1_distance();
-        left_distance = Sensor1_distance();
+        left_distance = Sensor2_distance();
 
-        // Navigating state
-        switch(state){
-            case(left_object):
-                // Only wall on the left of robot
-                if(left_distance > left_threshold) next_state = passby_object;
-                else {
-                    drive_straight(left_distance);
-                    next_state = left_object;
-                    if(front_distance > front_threshold){
-                        next_state = left_front_object; // front object encountered
-                    }
-                }
-                last_state = left_object;
+
+        xil_printf(left_distance);
+
+
+
+    //     // Navigating state
+    //     switch(state){
+    //         case(left_object):
+    //             // Only wall on the left of robot
+    //             if(left_distance > left_threshold) next_state = passby_object;
+    //             else {
+    //                 drive_straight(left_distance);
+    //                 next_state = left_object;
+    //                 if(front_distance > front_threshold){
+    //                     next_state = left_front_object; // front object encountered
+    //                 }
+    //             }
+    //             last_state = left_object;
             
-            case(left_front_object):
-            // Object on left and in front of robot
-                Stop_motors();
-                timer_2us(500000);
-                Turn_right();            
-                next_state = check_end;
-                last_state = left_front_object;
+    //         case(left_front_object):
+    //         // Object on left and in front of robot
+    //             Stop_motors();
+    //             timer_2us(500000);
+    //             Turn_right();            
+    //             next_state = check_end;
+    //             last_state = left_front_object;
             
-            case(passby_object):
-                // passing object 
-                //Pass_object();
-                next_state = left_object;
-                last_state = passby_object;
+    //         case(passby_object):
+    //             // passing object 
+    //             //Pass_object();
+    //             next_state = left_object;
+    //             last_state = passby_object;
             
-            case(check_end):
-                // checking if end condition is met
-                if(last_state == left_front_object){
-                    next_state = end;
-                }
-                else next_state = left_object;
-            case(end):
-                // end of maze
-                Stop_motors();
-                next_state = end;
-        }
-        // Go to next location state
-        state = next_state;
+    //         case(check_end):
+    //             // checking if end condition is met
+    //             if(last_state == left_front_object){
+    //                 next_state = end;
+    //             }
+    //             else next_state = left_object;
+    //         case(end):
+    //             // end of maze
+    //             Stop_motors();
+    //             next_state = end;
+    //     }
+    //     // Go to next location state
+    //     state = next_state;
         
-    }
+    // }
 
+}
 }
 
 // Function Implementation - Initialization
@@ -681,10 +687,15 @@ uint8_t Sensor2_distance(void){
 }
 
 void Stop_motors(void){
-    // add code to stop all motors from spinning 
+    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
+            (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
+            (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
 }
 
+
 void Pass_object(void){
-    // add code that drive straight for a couple seconds
-    // pass object after passing left sensor distance > left_threshold
+    drive_straight(5); 
+    timer_2us(1000000); 
+    Stop_motors();
 }
+
