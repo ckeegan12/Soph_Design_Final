@@ -73,6 +73,7 @@
 #define TCR1      (*(unsigned volatile *) 0x40009018)
 #define TIMEOUT   10000000
 
+
 // Other
 const volatile uint32_t TCSR_OFFSET = 0;
 const volatile uint32_t TLR_OFFEST = 1;
@@ -101,7 +102,9 @@ void Pass_object();
 // Drive Direction
 void Turn_left();
 void Turn_right();
-void drive_straight(uint8_t left_distance);
+void drive_straight_while_monitoring(void); 
+void drive_straight_until_left_wall(void);
+
 
 // Detection Functions
 // sensor1 = front sensor | sensor2 = left sensor
@@ -123,105 +126,106 @@ void timer_2us(unsigned t);
 _Bool delay_1s();
 _Bool delay_half_sec();
 
-int get_Sensor1_distance();
+
+uint8_t done_letters[4] = {
+                    0x5E,  // 'd'
+                    0x5C,  // 'o'
+                    0xA8,  // 'n'
+                    0xF6   // 'e'
+                    };
+
+typedef enum { ACTION_DRIVE_STRAIGHT, ACTION_TURN_RIGHT, ACTION_FINAL_STATE, ACTION_TURN_LEFT} action_type;
+typedef enum {STATE_NORMAL, STATE_ONE_LEFT, STATE_TWO_LEFTS} logic_state_type;
 
 
 
 
-
-
-int main (void){
-
-    // One time initializations
+int main(void) {
     init_program();
     JA_DDR = 0x03;
     JC_DDR = 0x00;
     JB_DDR = 0x0A;
 
-    // // State Enumerations for loop
-    // enum state_type {left_object, left_front_object, passby_object, check_end, end};
-    // static enum state_type state = left_object;
-    // enum state_type next_state = state;
-    // enum state_type last_state = state;
+    uint8_t count_object = 0;
 
-    // // Navigating parameters
-    // uint32_t front_threshold = 3; // Distance threshold to turn after object in front
-    // uint32_t left_threshold = 10; // Distance threshold to turn after passing object
-    // uint8_t count = 0; // Sensor count
+    logic_state_type logic_state = STATE_NORMAL;
+
+    while (!UpButton_pressed());
 
     while (1) {
-    // uint8_t front_distance = Sensor1_distance();
-    // xil_printf("Distance: %d\r\n", front_distance);
-    // if (front_distance < 6){
-    //     Turn_right();
-    // }
-    // timer_2us(100000); // 200 ms between pings
+        uint8_t front_distance = Sensor1_distance();
+        uint8_t left_distance = Sensor2_distance();
 
-    uint8_t left_distance = Sensor2_distance();
-    xil_printf("Distance: %d\r\n", left_distance);
-    if (left_distance > 6){
-        Turn_right();
+        static action_type action = ACTION_DRIVE_STRAIGHT;
+
+        // Determine action
+        if (front_distance < 2) {
+            action = ACTION_TURN_RIGHT;
+        } else if (left_distance > 5) {
+            action = ACTION_TURN_LEFT;
+        } else {
+            action = ACTION_DRIVE_STRAIGHT;
+        }
+
+        // FSM logic to detect two consecutive left turns
+        switch (logic_state) {
+            case STATE_NORMAL:
+                if (action == ACTION_TURN_LEFT)
+                    logic_state = STATE_ONE_LEFT;
+                break;
+
+            case STATE_ONE_LEFT:
+                if (action == ACTION_TURN_LEFT)
+                    logic_state = STATE_TWO_LEFTS;
+                else if (action != ACTION_TURN_LEFT)
+                    logic_state = STATE_NORMAL;
+                break;
+
+            case STATE_TWO_LEFTS:
+                action = ACTION_FINAL_STATE;
+                logic_state = STATE_NORMAL;
+                break;
+        }
+
+        // Perform the action
+        switch (action) {
+            case ACTION_TURN_RIGHT:
+                Stop_motors();
+                count_object++;
+                Turn_right();
+                timer_2us(100000);
+                Stop_motors();
+                break;
+
+            case ACTION_TURN_LEFT:
+                timer_2us(100000);
+                Stop_motors();
+                Turn_left();
+                drive_straight_until_left_wall();
+                timer_2us(100000);
+                Stop_motors();
+                break;
+
+            case ACTION_DRIVE_STRAIGHT:
+                drive_straight_while_monitoring();
+                break;
+
+            case ACTION_FINAL_STATE:
+                Stop_motors();
+                show_sseg(done_letters);
+                while (1);  // halt forever
+                break;
+        }
+
+        count_display(count_object);
+        timer_2us(20000);
     }
-    timer_2us(100000); // 200 ms between pings
+
+    Stop_motors();
+    return 0;
 }
 
 
-    // Navigating loop
-    // while(1){
-
-    //     // Sensor distance parameters
-    //     // uint8_t front_distance = Sensor1_distance();
-    //     // uint8_t left_distance = Sensor2_distance();    
-
-    
-
-
-
-    //     // Navigating state
-    //     switch(state){
-    //         case(left_object):
-    //             // Only wall on the left of robot
-    //             if(left_distance > left_threshold) next_state = passby_object;
-    //             else {
-    //                 drive_straight(left_distance);
-    //                 next_state = left_object;
-    //                 if(front_distance > front_threshold){
-    //                     next_state = left_front_object; // front object encountered
-    //                 }
-    //             }
-    //             last_state = left_object;
-            
-    //         case(left_front_object):
-    //         // Object on left and in front of robot
-    //             Stop_motors();
-    //             timer_2us(500000);
-    //             Turn_right();            
-    //             next_state = check_end;
-    //             last_state = left_front_object;
-            
-    //         case(passby_object):
-    //             // passing object 
-    //             //Pass_object();
-    //             next_state = left_object;
-    //             last_state = passby_object;
-            
-    //         case(check_end):
-    //             // checking if end condition is met
-    //             if(last_state == left_front_object){
-    //                 next_state = end;
-    //             }
-    //             else next_state = left_object;
-    //         case(end):
-    //             // end of maze
-    //             Stop_motors();
-    //             next_state = end;
-    //     }
-    //     // Go to next location state
-    //     state = next_state;
-        
-    // }
-
-}
 
 
 // Function Implementation - Initialization
@@ -377,19 +381,17 @@ void Turn_right(){
 }
 
 
-void drive_straight(uint8_t left_distance) {
-    // Motor duty cycle update function to drive straight
-    // JC Motor pin mapping
+
+
+
+void drive_straight_until_left_wall(void) {
     JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
             (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
             (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
 
-    // Duty cycle parameter
-    uint16_t pwmCnt = 0;
-
-    // Initial calibrated offset — favoring slightly slower right motor
     int16_t duty_left = DUTY_MOTION_START_LEFT;
     int16_t duty_right = DUTY_MOTION_START_RIGHT;
+    uint16_t pwmCnt = 0;
 
     read_R1_quad_enc(1);
     read_L1_quad_enc(1);
@@ -397,9 +399,13 @@ void drive_straight(uint8_t left_distance) {
     JC |= (1 << LEFT1_OFFSET) | (1 << RIGHT2_OFFSET);
     JC &= ~((1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET));
 
-    // Duty cycle update loop
     while (1) {
+        uint8_t left_distance = Sensor2_distance();
 
+        // Interrupt conditions:
+        if (left_distance < 5) break;   // Wall is now on the left again
+
+        // PWM update
         if (pwmCnt <= duty_left)
             JC |= (1 << L_PWM_OFFSET);
         else
@@ -413,43 +419,91 @@ void drive_straight(uint8_t left_distance) {
         if (++pwmCnt >= PWM_TOP) {
             pwmCnt = 0;
 
+            // Balance based on encoder counts
             int32_t left_count = read_L1_quad_enc(0);
             int32_t right_count = read_R1_quad_enc(0);
-            int32_t encoder_diff = right_count - left_count;
-            
-            if((encoder_diff > 0) | (left_distance > 3)){
-                // Right motor duty cycle too high (veering right)
-                // Right encoder value higher than left and sensor farther than 3in
-                duty_left += 1;
-                duty_right -= 1;
+            int32_t diff = left_count - right_count;
 
-            }
-            if((encoder_diff < 0) | (left_distance < 3)){
-                // Left motor duty cycle too high (veering left)
-                // Left encoder value higher than right and sensor closer than 3in
+            if (diff > 2) {
                 duty_left -= 1;
                 duty_right += 1;
-            }
-            if(duty_left > 180){
-                // Left duty cycle reaches max of 180
+            } else if (diff < -2) {
+                duty_left += 1;
                 duty_right -= 1;
-                duty_left = 180;                
-                
             }
-            if(duty_right > 180){
-                // right duty cycle reaches max of 180
-                duty_left -= 1;
-                duty_right = 180;
-                
-            }
+
+            // Clamp
+            if (duty_left > PWM_TOP) duty_left = PWM_TOP;
+            if (duty_right > PWM_TOP) duty_right = PWM_TOP;
+            if (duty_left < 100) duty_left = 100;
+            if (duty_right < 100) duty_right = 100;
         }
     }
+}
 
-    // Stop motors and directions
+
+void drive_straight_while_monitoring(void) {
     JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
             (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
             (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
+
+    int16_t duty_left = DUTY_MOTION_START_LEFT;
+    int16_t duty_right = DUTY_MOTION_START_RIGHT;
+    uint16_t pwmCnt = 0;
+
+    read_R1_quad_enc(1);
+    read_L1_quad_enc(1);
+
+    JC |= (1 << LEFT1_OFFSET) | (1 << RIGHT2_OFFSET);
+    JC &= ~((1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET));
+
+    while (1) {
+        uint8_t front_distance = Sensor1_distance();
+        uint8_t left_distance = Sensor2_distance();
+
+        // Interrupt conditions:
+        if (front_distance < 2) break;  // Obstacle ahead → handle in main
+        if (left_distance > 5) break;   // No wall on left → handle in main
+
+        // PWM update
+        if (pwmCnt <= duty_left)
+            JC |= (1 << L_PWM_OFFSET);
+        else
+            JC &= ~(1 << L_PWM_OFFSET);
+
+        if (pwmCnt <= duty_right)
+            JC |= (1 << R_PWM_OFFSET);
+        else
+            JC &= ~(1 << R_PWM_OFFSET);
+
+        if (++pwmCnt >= PWM_TOP) {
+            pwmCnt = 0;
+
+            // Balance based on encoder counts
+            int32_t left_count = read_L1_quad_enc(0);
+            int32_t right_count = read_R1_quad_enc(0);
+            int32_t diff = left_count - right_count;
+
+            if (diff > 2) {
+                duty_left -= 1;
+                duty_right += 1;
+            } else if (diff < -2) {
+                duty_left += 1;
+                duty_right -= 1;
+            }
+
+            // Clamp
+            if (duty_left > PWM_TOP) duty_left = PWM_TOP;
+            if (duty_right > PWM_TOP) duty_right = PWM_TOP;
+            if (duty_left < 100) duty_left = 100;
+            if (duty_right < 100) duty_right = 100;
+        }
+    }
+
+    Stop_motors();  // Exit loop: stop before next behavior
 }
+
+
 
 void count_display(uint8_t count){
     uint8_t sevenSegValue[4] = {0};
@@ -472,7 +526,6 @@ void count_display(uint8_t count){
     sevenSegValue[3] = sevenSegLUT[0];
     show_sseg(&sevenSegValue[0]);
 }
-
 
 //setting functions
 
@@ -513,8 +566,8 @@ _Bool read_echo2_pin(){
     return echo2;
 }
 
+//Distance Calculations
 
-// /*
 uint8_t Sensor1_distance() {
     // Trigger the sensor
     clear_trig1_pin();
@@ -544,10 +597,6 @@ uint8_t Sensor1_distance() {
     return time / 148;
 }
 
-
-// */
-
-// /*
 uint8_t Sensor2_distance() {
     // Trigger the sensor
     clear_trig2_pin();
@@ -577,153 +626,11 @@ uint8_t Sensor2_distance() {
     return time / 148;
 }
 
-//*/
-
-
-
-/*
-uint8_t Sensor1_distance() {
-    // Variables
-    uint8_t distance_front = 0;
-    uint32_t count = 0;
-    uint32_t time = 0;
-
-    // FSM States
-    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge};
-    static enum state_type state = send_trig;
-    enum state_type next_state = state;
-
-    while (1) {
-        switch (state) {
-
-            case send_trig:
-                // Trigger pulse: HIGH for 10us
-                clear_trig1_pin();
-                timer_2us(2);
-                set_trig1_pin();
-                timer_2us(10);
-                clear_trig1_pin();
-
-                count = 0;
-                next_state = wait_for_echo;
-                break;
-
-            case wait_for_echo:
-                if (read_echo1_pin()) {
-                    start_stopwatch(1);
-                    next_state = count_echo_duration;
-                } else if (count >= 1500) { // ~30ms timeout if timer_2us(20)
-                    return 100;  // timeout fallback value
-                } else {
-                    timer_2us(20); // wait 40 µs per loop
-                    count++;
-                }
-                break;
-
-            case count_echo_duration:
-                if (!read_echo1_pin()) {
-                    next_state = echo_falling_edge;
-                }
-                break;
-
-            case echo_falling_edge:
-                time = read_stopwatch(1);
-                distance_front = time / 148;  // Convert to inches
-                timer_2us(30000); // Cooldown ~60 ms before next ping
-                next_state = send_trig;
-                return distance_front;
-
-            default:
-                next_state = send_trig;
-                break;
-        }
-
-        state = next_state;
-    }
-}
-*/
-
-
-
-/*
-uint8_t Sensor2_distance(void){
-    // Distance calculation for left sensor
-    // Tracking Variables
-    uint8_t distance_left = 0; // variable to compute distance of the object from the sensor
-    uint32_t count = 0; // a counter variable
-    uint32_t time = 0; // variable to count the duration of echo
-
-    // State Enumerations
-    enum state_type {send_trig, wait_for_echo, count_echo_duration, echo_falling_edge, cooldown};
-    static enum state_type state = send_trig;
-    enum state_type next_state = state;
-    while(1){
-        switch (state) {
-            case send_trig:   
-                //send 10us pulse to trig pin then move to next state
-                clear_trig2_pin();
-                timer_2us(5);
-                set_trig2_pin();  
-                timer_2us(5);
-                clear_trig2_pin();
-                count = 0;
-                next_state = wait_for_echo;
-
-            case wait_for_echo:    
-                // Read the echo pin, if recieved restart timer then move to echo count
-                // If echo not recieved then count till TIMEOUT
-                if (read_echo1_pin()){
-                    start_stopwatch(1);
-                    next_state = count_echo_duration;
-                    break;
-                }
-                else if (count == TIMEOUT){
-                    next_state = send_trig;
-                    return(100);
-                    break;
-                }
-                else{
-                    count = count + 1;
-                }
-
-
-            case count_echo_duration:
-                // while echo is high stay in count echo until falling edge
-                while(read_echo1_pin());
-                next_state = echo_falling_edge;
-            
-
-            case echo_falling_edge:
-                // Get timer value to get duration of echo high
-                // Compute distance in inches how far object is away from sensor
-                time = read_stopwatch(1); 
-                distance_left = (time*0.00034)/2; // Distance from sensor
-                next_state = send_trig;
-                return(distance_left);
-
-            default:
-                // If no cases met send trig
-                next_state = send_trig;
-            
-        }
-        state = next_state; // Assign state to next_state
-    }
-}
-*/
-
-
 
 void Stop_motors(void){
     JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
             (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
             (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
-}
-
-
-void Pass_object(void){
-    drive_straight(5); 
-    timer_2us(1000000); 
-    Stop_motors();
 }
 
 
