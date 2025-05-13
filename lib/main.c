@@ -52,10 +52,12 @@
 #define R_PWM_OFFSET 3 // JC[3]
 #define RIGHT2_OFFSET 4 // JC[4]
 #define RIGHT1_OFFSET 5 // JC[5]
-#define DUTY_MOTION_START_RIGHT 150
-#define DUTY_MOTION_START_LEFT 160
+#define DUTY_MOTION_START_RIGHT 130
+#define DUTY_MOTION_START_LEFT 145
 #define DUTY_MOTION_START 200
 #define PWM_TOP 255
+#define LEFT_ENCODER_CNT 41 // left encoder count to 1in (1in times 41)
+#define RIGHT_ENCODER_CNT 41 // right encoder count to 1in
 
 // Quad Encoder
 #define L1_QUAD_ENC_OFFSET 0 // JA[0]
@@ -96,14 +98,14 @@ uint32_t * convert_timer_to_hex_address (uint8_t timer_number);
 // Motor Functions
 uint32_t read_L1_quad_enc(_Bool reset);
 uint32_t read_R1_quad_enc(_Bool reset);
-void Stop_motors();
+//void Stop_motors();
 void Pass_object();
 
 // Drive Direction
 void Turn_left();
 void Turn_right();
 void drive_straight_while_monitoring(void); 
-void drive_straight_until_left_wall(void);
+//void drive_straight_until_left_wall(void);
 
 
 // Detection Functions
@@ -135,10 +137,9 @@ uint8_t done_letters[4] = {
                     };
 
 typedef enum { ACTION_DRIVE_STRAIGHT, ACTION_TURN_RIGHT, ACTION_FINAL_STATE, ACTION_TURN_LEFT} action_type;
-typedef enum {STATE_NORMAL, STATE_ONE_LEFT, STATE_TWO_LEFTS} logic_state_type;
-
-
-
+typedef enum {STATE_NORMAL, STATE_ONE_RIGHT, STATE_TWO_RIGHTS} logic_state_type;
+uint8_t left_duty = DUTY_MOTION_START_LEFT;
+uint8_t right_duty = DUTY_MOTION_START_RIGHT;
 
 int main(void) {
     init_program();
@@ -155,6 +156,7 @@ int main(void) {
     while (1) {
         uint8_t front_distance = Sensor1_distance();
         uint8_t left_distance = Sensor2_distance();
+        int pass = 0;
 
         static action_type action = ACTION_DRIVE_STRAIGHT;
 
@@ -170,18 +172,18 @@ int main(void) {
         // FSM logic to detect two consecutive left turns
         switch (logic_state) {
             case STATE_NORMAL:
-                if (action == ACTION_TURN_LEFT)
-                    logic_state = STATE_ONE_LEFT;
+                if (action == ACTION_TURN_RIGHT)
+                    logic_state = STATE_ONE_RIGHT;
                 break;
 
-            case STATE_ONE_LEFT:
-                if (action == ACTION_TURN_LEFT)
-                    logic_state = STATE_TWO_LEFTS;
-                else if (action != ACTION_TURN_LEFT)
+            case STATE_ONE_RIGHT:
+                if (action == ACTION_TURN_RIGHT)
+                    logic_state = STATE_TWO_RIGHTS;
+                else if (action != ACTION_TURN_RIGHT)
                     logic_state = STATE_NORMAL;
                 break;
 
-            case STATE_TWO_LEFTS:
+            case STATE_TWO_RIGHTS:
                 action = ACTION_FINAL_STATE;
                 logic_state = STATE_NORMAL;
                 break;
@@ -190,43 +192,47 @@ int main(void) {
         // Perform the action
         switch (action) {
             case ACTION_TURN_RIGHT:
-                Stop_motors();
                 count_object++;
                 Turn_right();
                 timer_2us(100000);
-                Stop_motors();
                 break;
 
             case ACTION_TURN_LEFT:
                 timer_2us(100000);
-                Stop_motors();
+                while(!(pass == 5)){
+                    // go foward 5in
+                    drive_straight_while_monitoring();
+                    ++pass;
+                }
+                pass = 0;
                 Turn_left();
-                drive_straight_until_left_wall();
                 timer_2us(100000);
-                Stop_motors();
                 break;
 
             case ACTION_DRIVE_STRAIGHT:
                 drive_straight_while_monitoring();
+                // motify duty cycles
+                if(read_L1_quad_enc(0) > read_R1_quad_enc(0)){
+                    --left_duty;
+                    ++right_duty;
+                }
+                else if(read_R1_quad_enc(0) > read_L1_quad_enc(0)){
+                    ++left_duty;
+                    --right_duty;
+                }
                 break;
 
             case ACTION_FINAL_STATE:
-                Stop_motors();
                 show_sseg(done_letters);
                 while (1);  // halt forever
                 break;
         }
-
+        // Display count
         count_display(count_object);
         timer_2us(20000);
     }
-
-    Stop_motors();
     return 0;
 }
-
-
-
 
 // Function Implementation - Initialization
 void init_program(){
@@ -307,13 +313,8 @@ _Bool delay_half_sec(){
     return false;
 }
 
-
-
-
 void Turn_left(){
     // Reset motor direction and PWM pins
-    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
-
   
     _Bool EndR = 0;
     _Bool EndL = 0;    
@@ -325,11 +326,11 @@ void Turn_left(){
         JC |= (1<<RIGHT1_OFFSET) | (1<<LEFT1_OFFSET);
         JC &= ~(1<<RIGHT2_OFFSET) & ~(1<<LEFT2_OFFSET);
         
-        if (pwmCnt <= DUTY_MOTION_START)
+        if (pwmCnt <= DUTY_MOTION_START_LEFT)
             JC |= (1 << L_PWM_OFFSET);
         else
             JC &= ~(1 << L_PWM_OFFSET);
-        if (pwmCnt <= DUTY_MOTION_START)
+        if (pwmCnt <= DUTY_MOTION_START_RIGHT)
             JC |= (1 << R_PWM_OFFSET);
         else 
             JC &= ~(1 << R_PWM_OFFSET);
@@ -347,7 +348,6 @@ void Turn_left(){
 }
 
 void Turn_right(){
-    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
 
     _Bool EndL = 0;
     _Bool EndR = 0;
@@ -359,11 +359,11 @@ void Turn_right(){
         JC |= (1<<RIGHT2_OFFSET) | (1<<LEFT2_OFFSET);
         JC &= ~(1<<RIGHT1_OFFSET) & ~(1<<LEFT1_OFFSET);
         
-        if (pwmCnt <= DUTY_MOTION_START)
+        if (pwmCnt <= DUTY_MOTION_START_LEFT)
             JC |= (1 << L_PWM_OFFSET);
         else
             JC &= ~(1 << L_PWM_OFFSET);
-        if (pwmCnt <= DUTY_MOTION_START)
+        if (pwmCnt <= DUTY_MOTION_START_RIGHT)
             JC |= (1 << R_PWM_OFFSET);
         else 
             JC &= ~(1 << R_PWM_OFFSET);
@@ -381,10 +381,7 @@ void Turn_right(){
 }
 
 
-
-
-
-void drive_straight_until_left_wall(void) {
+/*void drive_straight_until_left_wall(void) {
     JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
             (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
             (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
@@ -440,70 +437,39 @@ void drive_straight_until_left_wall(void) {
         }
     }
 }
-
+*/
 
 void drive_straight_while_monitoring(void) {
-    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
-            (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
-            (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
-
-    int16_t duty_left = DUTY_MOTION_START_LEFT;
-    int16_t duty_right = DUTY_MOTION_START_RIGHT;
-    uint16_t pwmCnt = 0;
-
-    read_R1_quad_enc(1);
-    read_L1_quad_enc(1);
-
+    
     JC |= (1 << LEFT1_OFFSET) | (1 << RIGHT2_OFFSET);
     JC &= ~((1 << LEFT2_OFFSET) | (1 << RIGHT1_OFFSET));
+    
+    read_L1_quad_enc(1);
+    read_R1_quad_enc(1);
 
-    while (1) {
-        uint8_t front_distance = Sensor1_distance();
-        uint8_t left_distance = Sensor2_distance();
+    uint16_t pwmCnt = 0;
 
-        // Interrupt conditions:
-        if (front_distance < 2) break;  // Obstacle ahead → handle in main
-        if (left_distance > 5) break;   // No wall on left → handle in main
-
-        // PWM update
-        if (pwmCnt <= duty_left)
-            JC |= (1 << L_PWM_OFFSET);
-        else
+    while (read_L1_quad_enc(0) < LEFT_ENCODER_CNT || read_R1_quad_enc(0) < RIGHT_ENCODER_CNT) {
+        if(left_duty >= pwmCnt){
+           JC |= (1 << L_PWM_OFFSET);
+        }
+        else{
             JC &= ~(1 << L_PWM_OFFSET);
-
-        if (pwmCnt <= duty_right)
+        }
+        if(right_duty >= pwmCnt){
             JC |= (1 << R_PWM_OFFSET);
-        else
+        }
+        else{
             JC &= ~(1 << R_PWM_OFFSET);
-
-        if (++pwmCnt >= PWM_TOP) {
+        }
+        ++pwmCnt;
+        if(pwmCnt >= PWM_TOP){
             pwmCnt = 0;
-
-            // Balance based on encoder counts
-            int32_t left_count = read_L1_quad_enc(0);
-            int32_t right_count = read_R1_quad_enc(0);
-            int32_t diff = left_count - right_count;
-
-            if (diff > 2) {
-                duty_left -= 1;
-                duty_right += 1;
-            } else if (diff < -2) {
-                duty_left += 1;
-                duty_right -= 1;
-            }
-
-            // Clamp
-            if (duty_left > PWM_TOP) duty_left = PWM_TOP;
-            if (duty_right > PWM_TOP) duty_right = PWM_TOP;
-            if (duty_left < 100) duty_left = 100;
-            if (duty_right < 100) duty_right = 100;
+            
         }
     }
-
-    Stop_motors();  // Exit loop: stop before next behavior
+  
 }
-
-
 
 void count_display(uint8_t count){
     uint8_t sevenSegValue[4] = {0};
@@ -627,11 +593,10 @@ uint8_t Sensor2_distance() {
 }
 
 
-void Stop_motors(void){
-    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET) | 
-            (1 << LEFT1_OFFSET) | (1 << LEFT2_OFFSET) | 
-            (1 << RIGHT1_OFFSET) | (1 << RIGHT2_OFFSET));
-}
+/*void Stop_motors(void){
+    JC &= ~((1 << L_PWM_OFFSET) | (1 << R_PWM_OFFSET));
+    timer_2us(200000);
+}*/
 
 
 void timer_2us(unsigned t) {
@@ -703,6 +668,7 @@ uint32_t read_R1_quad_enc(_Bool reset){
     static _Bool quad_enc_last_state = 0;
 
     if (reset){cnt = 0;}
+
     if((quad_enc_last_state == 0) && (JA & (1<<R1_QUAD_ENC_OFFSET))){
         cnt++;
     }
