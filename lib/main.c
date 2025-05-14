@@ -54,6 +54,7 @@
 #define RIGHT1_OFFSET 5 // JC[5]
 #define DUTY_MOTION_START_RIGHT 165
 #define DUTY_MOTION_START_LEFT 180
+#define UPDATE_STRAIGHT 100
 #define DUTY_MOTION_START 200
 #define PWM_TOP 255
 #define LEFT_ENCODER_CNT 41 // left encoder count to 1in (1in times 41)
@@ -162,9 +163,9 @@ int main(void) {
         static action_type action = ACTION_DRIVE_STRAIGHT;
 
         // Determine action
-        if (front_distance < 2) {
+        if (front_distance < 3) {
             action = ACTION_TURN_RIGHT;
-        } else if (left_distance > 5) {
+        } else if (left_distance > 10) {
             action = ACTION_TURN_LEFT;
         } else {
             action = ACTION_DRIVE_STRAIGHT;
@@ -205,27 +206,29 @@ int main(void) {
                 break;
 
             case ACTION_DRIVE_STRAIGHT:
-                delay_half_sec();
                 drive_straight_while_monitoring();
                 // motify duty cycles
                 break;
 
             case ACTION_FINAL_STATE:
                 show_sseg(done_letters);
+                count_display(count_object);
                 while (1);  // halt forever
                 break;
         }
         // Display count
-        if(left_distance < 4){
-            --left_duty;
-            ++right_duty;
+        if(left_distance < 2){
+            left_duty = UPDATE_STRAIGHT;
+            right_duty = DUTY_MOTION_START;
         }
-        else if (left_distance > 6) {
-            ++left_duty;
-            --right_duty;
+        else if (left_distance > 4) {
+            right_duty = UPDATE_STRAIGHT;
+            left_duty = DUTY_MOTION_START;
         }
-        count_display(count_object);
-        Stop_motors();
+        else {
+            left_duty = DUTY_MOTION_START_LEFT;
+            right_duty = DUTY_MOTION_START_RIGHT;
+        }
     }
     return 0;
 }
