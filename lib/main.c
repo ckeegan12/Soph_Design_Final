@@ -52,11 +52,14 @@
 #define R_PWM_OFFSET 3 // JC[3]
 #define RIGHT2_OFFSET 4 // JC[4]
 #define RIGHT1_OFFSET 5 // JC[5]
-#define DUTY_MOTION_START_RIGHT 165
-#define DUTY_MOTION_START_LEFT 180
-#define UPDATE_STRAIGHT 100
-#define DUTY_MOTION_START 200
+#define DUTY_MOTION_START_RIGHT 185
+#define DUTY_MOTION_START_LEFT 200
+#define DUTY_LEFT_STRAIGHT 2
+#define DUTY_RIGHT_STRAIGHT 2
+#define UPDATE_STRAIGHT 2
+#define UPDATE_STRAIGHT2 4
 #define PWM_TOP 255
+#define PWM_TOP_STRAIGHT 8
 #define LEFT_ENCODER_CNT 41 // left encoder count to 1in (1in times 41)
 #define RIGHT_ENCODER_CNT 41 // right encoder count to 1in
 
@@ -138,10 +141,13 @@ uint8_t done_letters[4] = {
                     0xF6   // 'e'
                     };
 
+// state global variables
 typedef enum { ACTION_DRIVE_STRAIGHT, ACTION_TURN_RIGHT, ACTION_FINAL_STATE, ACTION_TURN_LEFT} action_type;
 typedef enum {STATE_NORMAL, STATE_ONE_RIGHT, STATE_TWO_RIGHTS} logic_state_type;
-uint8_t left_duty = DUTY_MOTION_START_LEFT;
-uint8_t right_duty = DUTY_MOTION_START_RIGHT;
+
+// driving gloabal variables
+uint8_t left_duty = DUTY_LEFT_STRAIGHT;
+uint8_t right_duty = DUTY_RIGHT_STRAIGHT;
 static uint16_t pwmCnt = 0;
 
 int main(void) {
@@ -207,11 +213,11 @@ int main(void) {
 
             case ACTION_DRIVE_STRAIGHT:
                 drive_straight_while_monitoring();
-                // motify duty cycles
                 break;
 
             case ACTION_FINAL_STATE:
                 show_sseg(done_letters);
+                LEDS = 0xFFFF;
                 count_display(count_object);
                 while (1);  // halt forever
                 break;
@@ -219,15 +225,15 @@ int main(void) {
         // Display count
         if(left_distance < 2){
             left_duty = UPDATE_STRAIGHT;
-            right_duty = DUTY_MOTION_START;
+            right_duty = UPDATE_STRAIGHT2;
         }
         else if (left_distance > 4) {
             right_duty = UPDATE_STRAIGHT;
-            left_duty = DUTY_MOTION_START;
+            left_duty = UPDATE_STRAIGHT2;
         }
         else {
-            left_duty = DUTY_MOTION_START_LEFT;
-            right_duty = DUTY_MOTION_START_RIGHT;
+            left_duty = DUTY_LEFT_STRAIGHT;
+            right_duty = DUTY_LEFT_STRAIGHT;
         }
     }
     return 0;
@@ -325,11 +331,11 @@ void Turn_left(){
         JC |= (1<<RIGHT1_OFFSET) | (1<<LEFT1_OFFSET);
         JC &= ~(1<<RIGHT2_OFFSET) & ~(1<<LEFT2_OFFSET);
         
-        if (pwmCnt <= 180 && !EndL)
+        if (pwmCnt <= DUTY_MOTION_START_LEFT && !EndL)
             JC |= (1 << L_PWM_OFFSET);
         else
             JC &= ~(1 << L_PWM_OFFSET);
-        if (pwmCnt <= 165 && !EndR)
+        if (pwmCnt <= DUTY_MOTION_START_RIGHT && !EndR)
             JC |= (1 << R_PWM_OFFSET);
         else 
             JC &= ~(1 << R_PWM_OFFSET);
@@ -363,17 +369,16 @@ void Pass_object(){
             JC &= ~(1 << L_PWM_OFFSET);
         }
         if(DUTY_MOTION_START_RIGHT >= pwmCnt){
-                JC |= (1 << R_PWM_OFFSET);
-            }
+            JC |= (1 << R_PWM_OFFSET);
+        }
         else{
             JC &= ~(1 << R_PWM_OFFSET);
         }
-            ++pwmCnt;
+        ++pwmCnt;
         if(pwmCnt >= PWM_TOP){
-            pwmCnt = 0;
-                
+            pwmCnt = 0;       
         }
-        if(read_L1_quad_enc(0) > 82 && read_R1_quad_enc(0) > 82){
+        if(read_L1_quad_enc(0) > (LEFT_ENCODER_CNT) && read_R1_quad_enc(0) > (RIGHT_ENCODER_CNT)){
             pass = 1;
         }
     }
@@ -396,17 +401,16 @@ void Pass_object(){
             JC &= ~(1 << L_PWM_OFFSET);
         }
         if(DUTY_MOTION_START_RIGHT >= pwmCnt){
-                JC |= (1 << R_PWM_OFFSET);
-            }
+            JC |= (1 << R_PWM_OFFSET);
+        }
         else{
             JC &= ~(1 << R_PWM_OFFSET);
         }
-            ++pwmCnt;
+        ++pwmCnt;
         if(pwmCnt >= PWM_TOP){
-            pwmCnt = 0;
-                
+            pwmCnt = 0;     
         }
-        if(read_L1_quad_enc(0) > 82 && read_R1_quad_enc(0) > 82){
+        if(read_L1_quad_enc(0) > (2*LEFT_ENCODER_CNT) && read_R1_quad_enc(0) > (2*RIGHT_ENCODER_CNT)){
             pass = 1;
         }
     }
@@ -457,13 +461,13 @@ void drive_straight_while_monitoring(void) {
         JC &= ~(1 << L_PWM_OFFSET);
     }
     if(right_duty >= pwmCnt){
-            JC |= (1 << R_PWM_OFFSET);
-        }
+        JC |= (1 << R_PWM_OFFSET);
+    }
     else{
         JC &= ~(1 << R_PWM_OFFSET);
     }
-        ++pwmCnt;
-    if(pwmCnt >= PWM_TOP){
+    ++pwmCnt;
+    if(pwmCnt >= PWM_TOP_STRAIGHT){
         pwmCnt = 0;
             
     }
