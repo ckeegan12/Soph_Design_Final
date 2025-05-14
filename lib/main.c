@@ -151,6 +151,7 @@ uint8_t right_duty = DUTY_RIGHT_STRAIGHT;
 static uint16_t pwmCnt = 0;
 
 int main(void) {
+    //innitialize pins
     init_program();
     JA_DDR = 0x03;
     JC_DDR = 0x00;
@@ -168,7 +169,7 @@ int main(void) {
 
         static action_type action = ACTION_DRIVE_STRAIGHT;
 
-        // Determine action
+        // Determine action based on sensor readings
         if (front_distance < 3) {
             action = ACTION_TURN_RIGHT;
         } else if (left_distance > 10) {
@@ -177,7 +178,7 @@ int main(void) {
             action = ACTION_DRIVE_STRAIGHT;
         }
 
-        // FSM logic to detect two consecutive left turns
+        // FSM logic to detect two consecutive left turns (to know when end)
         switch (logic_state) {
             case STATE_NORMAL:
                 if (action == ACTION_TURN_RIGHT)
@@ -200,6 +201,7 @@ int main(void) {
         // Perform the action
         switch (action) {
             case ACTION_TURN_RIGHT:
+                //track how many object encountered
                 count_object++;
                 Turn_right();
                 timer_2us(100000);
@@ -212,6 +214,7 @@ int main(void) {
                 break;
 
             case ACTION_DRIVE_STRAIGHT:
+                //drive straight until object encountered
                 drive_straight_while_monitoring();
                 break;
 
@@ -222,7 +225,7 @@ int main(void) {
                 while (1);  // halt forever
                 break;
         }
-        // Display count
+        // Display count of how many objects encountered
         if(left_distance < 2){
             left_duty = UPDATE_STRAIGHT;
             right_duty = UPDATE_STRAIGHT2;
